@@ -27,7 +27,6 @@
 #include <signal.h>
 #include <unistd.h>
 #include "linkquality_stats_rbus.h"
-#include "lq_log.h"
 #include "run_qmgr.h"
 
 #define COMPONENT_NAME "linkquality_stats"
@@ -50,28 +49,12 @@ int main(int argc, char *argv[])
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
     signal(SIGPIPE, SIG_IGN);
-
+#if 0
     if (lq_stats_rbus_init() != 0) {
         wifi_util_error_print(WIFI_LQ, "%s:%d rbus init failed\n", __func__, __LINE__);
         return EXIT_FAILURE;
     }
-
-    wifi_util_info_print(WIFI_LQ, "%s:%d rbus subscriptions active, entering main loop\n", __func__, __LINE__);
-
-    wifi_util_info_print(WIFI_LQ, "%s:%d === linkquality_stats subscribed events ===\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [rbus] Device.WiFi.LinkQuality.PeriodicStats   -> on_periodic_stats  -> add_stats_metrics()\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [rbus] Device.WiFi.LinkQuality.RapidDisconnect -> on_rapid_disconnect -> disconnect_link_stats()\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [rbus] Device.WiFi.LinkQuality.Remove          -> on_remove           -> remove_link_stats()\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [rbus] Device.WiFi.LinkQuality.HalIndication   -> on_hal_indication   -> periodic_caffinity_stats_update()\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d         HAL sub_types: auth_req, auth_rsp, assoc_req, assoc_rsp, reassoc_req, reassoc_rsp, disassoc, deauth\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [rbus] Device.WiFi.LinkQuality.Start           -> on_start            -> start_link_metrics()\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [rbus] Device.WiFi.LinkQuality.Stop            -> on_stop             -> stop_link_metrics()\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [rbus] Device.WiFi.LinkQuality.GwDiscovery     -> on_gw_discovery     -> (TODO)\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d === onewifi sources that publish to us ===\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [onewifi] wifi_stats_assoc_client.c  -> PeriodicStats, RapidDisconnect, Remove\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d   [onewifi] wifi_linkquality.c         -> HalIndication (auth/assoc/disassoc), Start, Stop, GwDiscovery\n", __func__, __LINE__);
-    wifi_util_info_print(WIFI_LQ, "%s:%d ==========================================\n", __func__, __LINE__);
-    
+#endif
     /* Event-driven: rbus dispatches callbacks on its own threads.
      * We just keep the process alive until signalled. */
     while (g_running) {
@@ -79,7 +62,6 @@ int main(int argc, char *argv[])
     }
 
     wifi_util_info_print(WIFI_LQ, "%s:%d shutting down linkquality_stats\n", __func__, __LINE__);
-    lq_stats_rbus_deinit();
 
     return EXIT_SUCCESS;
 }

@@ -26,10 +26,6 @@ AM_CFLAGS = -D_ANSC_LINUX -D_ANSC_USER -D_ANSC_LITTLE_ENDIAN_ -Wall -Werror
 #   - ccsp-one-wifi headers (for lq_rbus_events.h, run_qmgr.h, wifi_hal types)
 AM_CFLAGS += \
 	-I$(top_srcdir)/include \
-	-I$(ONE_WIFI_SRCDIR)/include \
-	-I$(ONE_WIFI_SRCDIR)/source/utils/quality_mgr/inc \
-	-I$(ONE_WIFI_SRCDIR)/source/utils/webserver/inc \
-	-I$(ONE_WIFI_SRCDIR)/source/utils/math_utils/inc \
 	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/rbus \
 	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/ccsp
 
@@ -37,14 +33,14 @@ bin_PROGRAMS = linkquality_stats
 
 linkquality_stats_SOURCES = \
 	$(top_srcdir)/source/linkquality_stats_main.c \
-	$(top_srcdir)/source/linkquality_stats_rbus.c
+	$(top_srcdir)/source/run_gmgr.cpp \
+	$(top_srcdir)/source/qmgr.cpp \
+	$(top_srcdir)/source/link.cpp \
+	$(top_srcdir)/source/caffinity.cpp \
 
 linkquality_stats_LDFLAGS = \
 	-lrbus \
-	-lwifi_quality_manager \
-	-lwifi_webserver \
 	-lwifi_math_utils \
 	-lstdc++ \
 	-Wl,--no-as-needed \
-	-lmemfnswrap \
 	-Wl,--as-needed
