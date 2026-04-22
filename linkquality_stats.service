@@ -1,0 +1,20 @@
+[Unit]
+Description=WiFi Link Quality Stats Process
+After=onewifi.service
+Requires=onewifi.service
+
+[Service]
+Type=simple
+# libwifi_quality_manager pulls in libmemfnswrap.so which hooks allocators via
+# dlsym(RTLD_NEXT,"memalign"). RTLD_NEXT only searches libraries loaded AFTER
+# the caller in the link map. When libmemfnswrap is a transitive dep it ends up
+# after libc in the load order and RTLD_NEXT cannot find memalign, causing abort.
+# LD_PRELOADing libmemfnswrap places it at link-map position #2 (after the
+# executable) so RTLD_NEXT covers libc and memalign is found correctly.
+Environment="LD_PRELOAD=/usr/lib/libmemfnswrap.so.0"
+ExecStart=/usr/bin/linkquality_stats
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

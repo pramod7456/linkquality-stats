@@ -1,0 +1,50 @@
+##########################################################################
+# If not stated otherwise in this file or this component's LICENSE
+# file the following copyright and licenses apply:
+#
+# Copyright 2018 RDK Management
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##########################################################################
+
+ACLOCAL_AMFLAGS = -I m4
+
+AM_CFLAGS = -D_ANSC_LINUX -D_ANSC_USER -D_ANSC_LITTLE_ENDIAN_ -Wall -Werror
+
+# Include paths:
+#   - our own include/
+#   - ccsp-one-wifi headers (for lq_rbus_events.h, run_qmgr.h, wifi_hal types)
+AM_CFLAGS += \
+	-I$(top_srcdir)/include \
+	-I$(ONE_WIFI_SRCDIR)/include \
+	-I$(ONE_WIFI_SRCDIR)/source/utils/quality_mgr/inc \
+	-I$(ONE_WIFI_SRCDIR)/source/utils/webserver/inc \
+	-I$(ONE_WIFI_SRCDIR)/source/utils/math_utils/inc \
+	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/rbus \
+	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/ccsp
+
+bin_PROGRAMS = linkquality_stats
+
+linkquality_stats_SOURCES = \
+	$(top_srcdir)/source/linkquality_stats_main.c \
+	$(top_srcdir)/source/linkquality_stats_rbus.c
+
+linkquality_stats_LDFLAGS = \
+	-lrbus \
+	-lwifi_quality_manager \
+	-lwifi_webserver \
+	-lwifi_math_utils \
+	-lstdc++ \
+	-Wl,--no-as-needed \
+	-lmemfnswrap \
+	-Wl,--as-needed
