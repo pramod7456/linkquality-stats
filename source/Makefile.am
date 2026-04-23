@@ -26,8 +26,18 @@ AM_CFLAGS = -D_ANSC_LINUX -D_ANSC_USER -D_ANSC_LITTLE_ENDIAN_ -Wall -Werror
 #   - ccsp-one-wifi headers (for lq_rbus_events.h, run_qmgr.h, wifi_hal types)
 AM_CFLAGS += \
 	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/source/utils \
 	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/rbus \
-	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/ccsp
+	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/ccsp \
+	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/ccsp/math_utils
+
+AM_CXXFLAGS = -O2 -Wall -Wextra
+AM_CXXFLAGS += \
+	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/source/utils \
+	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/rbus \
+	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/ccsp \
+	-I${PKG_CONFIG_SYSROOT_DIR}$(includedir)/ccsp/math_utils
 
 bin_PROGRAMS = linkquality_stats
 
@@ -36,7 +46,9 @@ linkquality_stats_SOURCES = \
 	$(top_srcdir)/source/run_qmgr.cpp \
 	$(top_srcdir)/source/qmgr.cpp \
 	$(top_srcdir)/source/linkq.cpp \
-	$(top_srcdir)/source/caffinity.cpp
+	$(top_srcdir)/source/caffinity.cpp \
+	$(top_srcdir)/source/utils/linkquality_util.c \
+	$(top_srcdir)/source/utils/collection.c
 
 linkquality_stats_CPPFLAGS = -I${PKG_CONFIG_SYSROOT_DIR}${includedir}  -I${PKG_CONFIG_SYSROOT_DIR}${includedir}/ccsp -I${PKG_CONFIG_SYSROOT_DIR}${libdir}/ -DEXTERNAL_USE_ONLY
 

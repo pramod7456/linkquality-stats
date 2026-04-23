@@ -28,7 +28,7 @@
 #include <vector>
 #include <map>
 #include <cjson/cJSON.h>
-#include "wifi_util.h"
+#include "collection.h"
 
 qmgr_t* qmgr_t::instance = NULL;
 uint8_t qmgr_t::m_gw_mac[6] = {0};
@@ -95,7 +95,7 @@ int qmgr_t::push_reporting_subdoc()
     report->link_count = link_index;
     // Call the callback
     qmgr_invoke_batch(report);
-    wifi_util_dbg_print(WIFI_APPS,"%s:%d Executed callback\n",__func__,__LINE__);
+    lq_util_dbg_print(LQ_LQTY,"%s:%d Executed callback\n",__func__,__LINE__);
 
     // Free everything after callback
     for (size_t i = 0; i < report->link_count; i++) {
@@ -144,7 +144,7 @@ int qmgr_t::run()
                 update_alarm = false;  
             }
             lq = (linkq_t *)hash_map_get_first(m_link_map);
-            wifi_util_dbg_print(WIFI_APPS,"%s:%d Processing %d devices in m_link_map\n",
+            lq_util_dbg_print(LQ_LQTY,"%s:%d Processing %d devices in m_link_map\n",
                 __func__,__LINE__, hash_map_count(m_link_map));
             double lq_sum_sq_iter = 0.0;
             int lq_count_iter = 0;
@@ -152,13 +152,13 @@ int qmgr_t::run()
                 v = lq->run_test(alarm,update_alarm, rapid_disconnect);
                 // Skip if run_test returned invalid/no data
                 if (v.m_num == 0 && !rapid_disconnect) {
-                    wifi_util_dbg_print(WIFI_APPS,
+                    lq_util_dbg_print(LQ_LQTY,
                         "%s:%d: Skipping device %s as no valid data available (v.m_num=%d)\n",
                         __func__, __LINE__, lq->get_mac_addr(), v.m_num);
                     lq = (linkq_t *)hash_map_get_next(m_link_map, lq);
                     continue;
                 }
-                wifi_util_dbg_print(WIFI_APPS,"%s:%d Device %s has valid data (v.m_num=%d), updating JSON\n",
+                lq_util_dbg_print(LQ_LQTY,"%s:%d Device %s has valid data (v.m_num=%d), updating JSON\n",
                     __func__,__LINE__, lq->get_mac_addr(), v.m_num);
                 strncpy(mac_str, lq->get_mac_addr(), sizeof(mac_str) - 1);
                 mac_str[sizeof(mac_str) - 1] = '\0';
@@ -180,7 +180,7 @@ int qmgr_t::run()
                device_json += "]";
                 device_json += "\"caff_score\":" +  std::to_string(0.888) + ",\"values\":[";
 	       device_json +=  std::to_string(29.4455) +"]}";
-               wifi_util_info_print(WIFI_CTRL,"Pramod %s:%d device_json = %s\n",__func__,__LINE__,device_json.c_str());
+               lq_util_info_print(LQ_LQTY,"Pramod %s:%d device_json = %s\n",__func__,__LINE__,device_json.c_str());
                payload_list.push_back(device_json);
 	       device_json = "";
 		lq_sum_sq_iter += lq_score * lq_score;
@@ -233,7 +233,7 @@ int qmgr_t::run()
                 double rms_unconnected = (unconnected_count > 0) ? sqrt(unconn_sum_sq_iter / unconnected_count) : 0.0;
                 rms_caffinity_score = rms_connected;
                 rms_ucaffinity_score = rms_unconnected;
-                wifi_util_info_print(WIFI_CTRL, "%s:%d RMS connected %lf samples, RMS unconnected %lf samples\n",
+                lq_util_info_print(LQ_LQTY, "%s:%d RMS connected %lf samples, RMS unconnected %lf samples\n",
                         __func__, __LINE__, rms_connected, rms_unconnected);
                 // Update RMS aggregate JSON
 
@@ -266,7 +266,7 @@ int qmgr_t::run()
 	    payload_list.clear();
             pthread_mutex_lock(&m_lock);
         } else {
-            wifi_util_error_print(WIFI_APPS,"%s:%d em exited with rc - %d",__func__,__LINE__,rc);
+            lq_util_error_print(LQ_LQTY,"%s:%d em exited with rc - %d",__func__,__LINE__,rc);
             pthread_mutex_unlock(&m_lock);
             return -1;
         }
@@ -294,13 +294,13 @@ void qmgr_t::deinit()
     m_caffinity_map.clear();
     
     hash_map_destroy(m_link_map);
-    wifi_util_info_print(WIFI_APPS," %s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
     return;
 }
 
 void qmgr_t::deinit(mac_addr_str_t mac_str)
 {
-    wifi_util_info_print(WIFI_APPS," %s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
     return;
 }
 
@@ -308,16 +308,16 @@ int qmgr_t::reinit(server_arg_t *args)
 {
     linkq_t *lq = NULL;
     if (args){
-        wifi_util_info_print(WIFI_APPS," %s:%d sampling=%d args->reporting =%d args->threshold=%f\n"
+        lq_util_info_print(LQ_LQTY," %s:%d sampling=%d args->reporting =%d args->threshold=%f\n"
 	, __func__,__LINE__,args->sampling,args->reporting,args->threshold); 
     } else {
-        wifi_util_info_print(WIFI_APPS," %s:%d err\n", __func__,__LINE__); 
+        lq_util_info_print(LQ_LQTY," %s:%d err\n", __func__,__LINE__); 
         return -1;
     }
    
     memcpy(&m_args, args, sizeof(server_arg_t));
     int count = hash_map_count(m_link_map);
-    wifi_util_info_print(WIFI_APPS," count=%d\n",count);
+    lq_util_info_print(LQ_LQTY," count=%d\n",count);
     lq = (linkq_t *)hash_map_get_first(m_link_map);
     while ((lq != NULL)) {
         if (count > 0){
@@ -346,7 +346,7 @@ bool qmgr_t::is_client_connected(const char *mac_str)
     
     pthread_mutex_unlock(&m_json_lock);
     
-    wifi_util_dbg_print(WIFI_CTRL, "CAFF %s:%d MAC %s is_connected=%d\n",
+    lq_util_dbg_print(LQ_LQTY, "CAFF %s:%d MAC %s is_connected=%d\n",
         __func__, __LINE__, mac_str, is_connected);
     
     return is_connected;
@@ -367,13 +367,13 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
     pthread_mutex_lock(&m_json_lock);
     if (!create_flag) {
         // remove from hashmap
-        wifi_util_info_print(WIFI_APPS," %s need to be removed \n", mac_str);
+        lq_util_info_print(LQ_LQTY," %s need to be removed \n", mac_str);
         linkq_t *lq = (linkq_t *)hash_map_get(m_link_map, mac_str);
         if (lq) {
                 hash_map_remove(m_link_map, mac_str);
                 delete lq;
             }  else {
-            wifi_util_info_print(WIFI_APPS,"Device %s not found, nothing to delete\n", mac_str);
+            lq_util_info_print(LQ_LQTY,"Device %s not found, nothing to delete\n", mac_str);
         }
         pthread_mutex_unlock(&m_json_lock);
         return 0;
@@ -385,11 +385,11 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
             if (lq) {
                 lq->init(m_args.threshold, m_args.reporting, stats);
                 hash_map_put(m_link_map, strdup(mac_str), lq);
-                wifi_util_info_print(WIFI_APPS,"Added linkq_t for %s to m_link_map\n", mac_str);
+                lq_util_info_print(LQ_LQTY,"Added linkq_t for %s to m_link_map\n", mac_str);
             }
         } else {
             lq->init(m_args.threshold, m_args.reporting, stats);
-            wifi_util_dbg_print(WIFI_APPS,"Updated stats for existing device %s\n", mac_str);
+            lq_util_dbg_print(LQ_LQTY,"Updated stats for existing device %s\n", mac_str);
         }
     }
 
@@ -398,22 +398,22 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
 }
 int qmgr_t::rapid_disconnect(stats_arg_t *stats)
 {
-    wifi_util_info_print(WIFI_APPS,"%s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
     if (!stats || stats->mac_str[0] == '\0') {
-        wifi_util_error_print(WIFI_APPS, "%s:%d invalid stats or empty MAC\n", __func__, __LINE__);
+        lq_util_error_print(LQ_LQTY, "%s:%d invalid stats or empty MAC\n", __func__, __LINE__);
         return -1;
     }
     mac_addr_str_t mac_str;
 
     strncpy(mac_str, stats->mac_str, sizeof(mac_str) - 1);
     mac_str[sizeof(mac_str) - 1] = '\0';
-    wifi_util_info_print(WIFI_APPS,"%s:%d mac_str=%s\n",__func__,__LINE__,mac_str);
+    lq_util_info_print(LQ_LQTY,"%s:%d mac_str=%s\n",__func__,__LINE__,mac_str);
 
     pthread_mutex_lock(&m_json_lock);
     linkq_t *lq = (linkq_t *)hash_map_get(m_link_map, mac_str);
     if (lq) {
         lq->rapid_disconnect(stats);   
-        wifi_util_dbg_print(WIFI_APPS,"%s:%d rapid_disconnect called for mac_str=%s\n",__func__,__LINE__,mac_str);
+        lq_util_dbg_print(LQ_LQTY,"%s:%d rapid_disconnect called for mac_str=%s\n",__func__,__LINE__,mac_str);
     }
     pthread_mutex_unlock(&m_json_lock);
     return 0;
@@ -421,9 +421,9 @@ int qmgr_t::rapid_disconnect(stats_arg_t *stats)
 
 int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
 {
-    wifi_util_info_print(WIFI_APPS,"%s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
     if (!stats || stats->mac_str[0] == '\0') {
-        wifi_util_error_print(WIFI_APPS, "%s:%d invalid stats or empty MAC\n", __func__, __LINE__);
+        lq_util_error_print(LQ_LQTY, "%s:%d invalid stats or empty MAC\n", __func__, __LINE__);
         return -1;
     }
 
@@ -431,7 +431,7 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
     strncpy(mac_str, stats->mac_str, sizeof(mac_str) - 1);
     mac_str[sizeof(mac_str) - 1] = '\0';
 #if 0
-    wifi_util_info_print(WIFI_APPS,"%s:%d mac_str=%s connected_time=%ld.%09ld disconnected_time=%ld.%09ld cli_SNR=%d\n",
+    lq_util_info_print(LQ_LQTY,"%s:%d mac_str=%s connected_time=%ld.%09ld disconnected_time=%ld.%09ld cli_SNR=%d\n",
         __func__, __LINE__, mac_str,
         (long)stats->total_connected_time.tv_sec, stats->total_connected_time.tv_nsec,
         (long)stats->total_disconnected_time.tv_sec, stats->total_disconnected_time.tv_nsec,
@@ -446,7 +446,7 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
 
     if (it == m_caffinity_map.end()) {
         // Create new caffinity object for this MAC
-        wifi_util_info_print(WIFI_CTRL, "CAFF qmgr_t %s:%d Creating new caffinity_t for MAC %s\n",
+        lq_util_info_print(LQ_LQTY, "CAFF qmgr_t %s:%d Creating new caffinity_t for MAC %s\n",
             __func__, __LINE__, mac_str);
         mac_addr_str_t mac_str_array;
         strncpy(mac_str_array, mac_str, sizeof(mac_str_array) - 1);
@@ -454,7 +454,7 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
         caff = new caffinity_t(&mac_str_array);
         if (caff) {
             m_caffinity_map[mac_key] = caff;
-            wifi_util_dbg_print(WIFI_APPS, "CAFF qmgr_t %s:%d Successfully created caffinity_t for MAC %s\n",
+            lq_util_dbg_print(LQ_LQTY, "CAFF qmgr_t %s:%d Successfully created caffinity_t for MAC %s\n",
                 __func__, __LINE__, mac_str);
         }
     } else {
@@ -473,10 +473,10 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
 // static helper function for pthread
 void* qmgr_t::run_helper(void* arg)
 {
-    wifi_util_info_print(WIFI_APPS," %s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
     qmgr_t* mgr = static_cast<qmgr_t*>(arg);
     if (mgr) {
-        wifi_util_info_print(WIFI_APPS,"%s:%d\n",__func__,__LINE__);
+        lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
         mgr->run();
     }
     return NULL;
@@ -484,16 +484,16 @@ void* qmgr_t::run_helper(void* arg)
 
 void qmgr_t::start_background_run()
 {
-    wifi_util_info_print(WIFI_APPS,"%s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
     if (m_bg_running) {
         return;   // already running
     }
     m_bg_running = true;
     int ret = pthread_create(&m_thread, NULL, run_helper, this);
     if (ret != 0) {
-        wifi_util_info_print(WIFI_APPS,"Failed to create background run thread\n");
+        lq_util_info_print(LQ_LQTY,"Failed to create background run thread\n");
     } else {
-        wifi_util_info_print(WIFI_APPS,"created background run thread\n");
+        lq_util_info_print(LQ_LQTY,"created background run thread\n");
     }
     return;
 }
@@ -515,14 +515,14 @@ char *qmgr_t::get_local_time(char *str, unsigned int len, bool hourformat)
 
 void qmgr_t::register_station_mac(const char* str)
 {
-    wifi_util_info_print(WIFI_APPS,"%s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
     linkq_t::register_station_mac(str);
     return;
 }
 
 void qmgr_t::unregister_station_mac(const char* str)
 {
-    wifi_util_info_print(WIFI_APPS,"%s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
     linkq_t::unregister_station_mac(str);
     reset_qmgr_score_cb();
     return;
@@ -586,7 +586,7 @@ void qmgr_t::destroy_instance()
 {
     static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_lock(&lock);
-    wifi_util_info_print(WIFI_APPS," %s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
 
     if (instance) {
         instance->deinit();    // cleanup internal resources
@@ -614,13 +614,13 @@ qmgr_t::~qmgr_t()
 }
 int qmgr_t::store_gw_mac(uint8_t *mac) 
 {
-    wifi_util_info_print(WIFI_APPS," %s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
     memcpy(m_gw_mac,mac,sizeof(m_gw_mac));
    return 0;
 }
 int qmgr_t::get_gw_mac(uint8_t *mac)
 {
-    wifi_util_info_print(WIFI_APPS," %s:%d\n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
     if (!mac) {
         return -1;
     }

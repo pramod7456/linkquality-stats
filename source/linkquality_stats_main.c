@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include "linkquality_stats_rbus.h"
 #include "run_qmgr.h"
+#include "linkquality_util.h"
 
 #define COMPONENT_NAME "linkquality_stats"
 
@@ -44,24 +45,25 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
-    wifi_util_info_print(WIFI_CTRL, "%s:%d starting linkquality_stats process\n", __func__, __LINE__);
+    lq_util_info_print(LQ_LQTY, "%s:%d starting linkquality_stats process\n", __func__, __LINE__);
 
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
     signal(SIGPIPE, SIG_IGN);
 #if 0
     if (lq_stats_rbus_init() != 0) {
-        wifi_util_error_print(WIFI_LQ, "%s:%d rbus init failed\n", __func__, __LINE__);
+        lq_util_error_print(WIFI_LQ, "%s:%d rbus init failed\n", __func__, __LINE__);
         return EXIT_FAILURE;
     }
 #endif
     /* Event-driven: rbus dispatches callbacks on its own threads.
      * We just keep the process alive until signalled. */
     while (g_running) {
-        pause();   /* sleep until signal */
+    start_link_metrics();
+        //pause();   /* sleep until signal */
     }
 
-    wifi_util_info_print(WIFI_CTRL, "%s:%d shutting down linkquality_stats\n", __func__, __LINE__);
+    lq_util_info_print(LQ_LQTY, "%s:%d shutting down linkquality_stats\n", __func__, __LINE__);
 
     return EXIT_SUCCESS;
 }

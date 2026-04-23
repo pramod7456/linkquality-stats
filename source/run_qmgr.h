@@ -30,6 +30,7 @@ extern "C" {
 #define SAMPLING_INTERVAL 5
 #define REPORTING_INTERVAL 5
 #include "wifi_base.h"
+#include "linkquality_util.h"
 
 #define LINKQ_DL_SNR        (1 << 0)
 #define LINKQ_DL_PER        (1 << 1)

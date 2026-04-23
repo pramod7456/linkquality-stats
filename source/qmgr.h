@@ -29,6 +29,7 @@
 #include <unordered_map>
 #include "linkq.h"
 #include "caffinity.h"
+#include "linkquality_util.h"
 
 #define MAX_FILE_NAME_SZ 1024
 #define MAX_PATH_SZ MAX_FILE_NAME_SZ

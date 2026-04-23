@@ -26,7 +26,7 @@
 #include "run_qmgr.h"
 #include <vector>
 #include <deque>
-
+#include "linkquality_util.h"
 #define MAX_LINE_SIZE   1024
 #define MAX_LINKQ_PARAMS    6
 #define MAX_SCORE_PARAMS    12

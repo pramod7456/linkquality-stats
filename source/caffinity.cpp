@@ -27,13 +27,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "wifi_util.h"
-#include "wifi_events.h"
+#include "lq_events.h"
 #include "caffinity.h"
 
 int caffinity_t::periodic_stats_update(stats_arg_t *arg)
 {
-   // wifi_util_info_print(WIFI_CTRL, "caffinity CAFF %s:%d event=%d dhcp_event=%d\n", __func__, __LINE__, arg->event, arg->dhcp_event);
     pthread_mutex_lock(&m_lock);
     
     // Handle DHCP event - update individual DHCP counters based on message type
@@ -47,7 +45,7 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
                 break;
             case 3: // DHCPREQUEST
                 m_request++;
-                wifi_util_info_print(WIFI_CTRL, "caffinity CAFF %s:%d DHCP REQUEST, total=%u\n",
+                lq_util_info_print(LQ_CAFF, "caffinity CAFF %s:%d DHCP REQUEST, total=%u\n",
                     __func__, __LINE__, m_request);
                 break;
             case 4: // DHCPDECLINE
@@ -93,21 +91,21 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
                 m_connected = true;
                 m_connected_time = arg->total_connected_time;
 
-                //wifi_util_info_print(WIFI_CTRL, "%s:%d check in vector %s\n", __func__, __LINE__, arg->ap_mac_str);
+                //lq_util_info_print(LQ_CAFF, "%s:%d check in vector %s\n", __func__, __LINE__, arg->ap_mac_str);
                 if (std::find(m_ap_mac.begin(), m_ap_mac.end(), arg->ap_mac_str) == m_ap_mac.end()) {
-                    wifi_util_info_print(WIFI_CTRL, "%s:%d push_back\n", __func__, __LINE__);
+                    lq_util_info_print(LQ_CAFF, "%s:%d push_back\n", __func__, __LINE__);
                     m_ap_mac.push_back(arg->ap_mac_str);
                 }
 
                 for (size_t i = 0; i < m_ap_mac.size(); ++i) {
-                    wifi_util_info_print(WIFI_CTRL, "%s:%d: %d: AP MAC %s\n", __func__, __LINE__, i, m_ap_mac[i].c_str());
+                    lq_util_info_print(LQ_CAFF, "%s:%d: %d: AP MAC %s\n", __func__, __LINE__, i, m_ap_mac[i].c_str());
                 }
             }
             break;
 
         case wifi_event_hal_sta_conn_status:
             {
-                wifi_util_info_print(WIFI_CTRL, "caffinity CAFF %s:%d wifi_event_hal_sta_conn_status for MAC %s\n",
+                lq_util_info_print(LQ_CAFF, "caffinity CAFF %s:%d wifi_event_hal_sta_conn_status for MAC %s\n",
                     __func__, __LINE__, arg->mac_str);
             }
             break;
@@ -115,7 +113,7 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
         case wifi_event_hal_disassoc_device:
             m_connected = false;
             m_disconnected_time = arg->total_disconnected_time;
-            wifi_util_info_print(WIFI_CTRL, "caffinity CAFF %s:%d DISASSOC device, m_connected=false, disconnected_time=%ld.%09ld\n",
+            lq_util_info_print(LQ_CAFF, "caffinity CAFF %s:%d DISASSOC device, m_connected=false, disconnected_time=%ld.%09ld\n",
                 __func__, __LINE__, (long)m_disconnected_time.tv_sec, m_disconnected_time.tv_nsec);
             break;
 
@@ -134,10 +132,10 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
     // Update cli_SNR only if client is connected to avoid overwriting valid SNR with 0
     if (m_connected) {
         m_cli_snr = arg->dev.cli_SNR;
-        wifi_util_info_print(WIFI_CTRL, "caffinity stats %s:%d Updated m_cli_snr=%d (client connected)\n",
+        lq_util_info_print(LQ_CAFF, "caffinity stats %s:%d Updated m_cli_snr=%d (client connected)\n",
             __func__, __LINE__, m_cli_snr);
     } else {
-        wifi_util_info_print(WIFI_CTRL, "caffinity stats %s:%d Skipping m_cli_snr update (client disconnected, keeping existing value=%d)\n",
+        lq_util_info_print(LQ_CAFF, "caffinity stats %s:%d Skipping m_cli_snr update (client disconnected, keeping existing value=%d)\n",
             __func__, __LINE__, m_cli_snr);
     }
 
@@ -165,21 +163,7 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
 
 
     result.connected = m_connected;
-    #if 0
-    // Debug dump of all stats for this MAC (one call per line to avoid logging truncation on embedded \n)
-    wifi_util_error_print(WIFI_CTRL, "caffinity %s:%d [MAC=%s] Stats Dump:\n", __func__, __LINE__, m_mac);
-    wifi_util_error_print(WIFI_CTRL, "caffinity   auth_attempts=%u auth_failures=%u assoc_attempts=%u\n",
-        m_auth_attempts, m_auth_failures, m_assoc_attempts);
-    wifi_util_error_print(WIFI_CTRL, "caffinity   assoc_failures=%u dhcp: discover=%u offer=%u request=%u decline=%u ack=%u nak=%u\n",
-        m_assoc_failures, m_discover, m_offer, m_request, m_decline, m_ack, m_nak);
-    wifi_util_error_print(WIFI_CTRL, "caffinity   connected_time=%ld.%09ld disconnected_time=%ld.%09ld sleep_time=%ld.%09ld\n",
-        (long)m_connected_time.tv_sec, (long)m_connected_time.tv_nsec,
-        (long)m_disconnected_time.tv_sec, (long)m_disconnected_time.tv_nsec,
-        (long)m_sleep_time.tv_sec, (long)m_sleep_time.tv_nsec);
-    wifi_util_error_print(WIFI_CTRL, "caffinity   total_time=%ld.%09ld connected=%d\n",
-        (long)m_total_time.tv_sec, (long)m_total_time.tv_nsec, m_connected);
-    #endif
-
+    
     bool connected = m_connected;
 
     /* ------------------------------------------------------------------ */
@@ -199,7 +183,7 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
         double total = connected_sec + disconnected_sec + sleep_sec;
 
         if (total <= 0.0) {
-            wifi_util_info_print(WIFI_CTRL,
+            lq_util_info_print(LQ_CAFF,
                 "caffinity %s:%d Connected client, total time is zero, returning score=0\n",
                 __func__, __LINE__);
             return result;
@@ -242,8 +226,6 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
     // Final failures = nak + decline + no_offer_failure + missing_acks
     uint32_t dhcp_failures = m_nak + m_decline + no_offer_failure + missing_acks;
     
-    //wifi_util_info_print(WIFI_CTRL, "caffinity %s:%d DHCP computed: attempts=%u failures=%u (no_offer=%u missing_acks=%u)\n",
-      //  __func__, __LINE__, dhcp_attempts, dhcp_failures, no_offer_failure, missing_acks);
 
     // Calculate failure rates with division-by-zero protection
     if (m_auth_attempts > 0) {
@@ -259,15 +241,9 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
 
     pthread_mutex_unlock(&m_lock);
 
-   // wifi_util_info_print(WIFI_CTRL, "caffinity %s:%d cli_SNR=%d, channel_utilization=%d\n",
-     //   __func__, __LINE__, cli_snr, channel_utilization);
-
     // Sum failure rates
     failure_ratio = auth_failure_rate + assoc_failure_rate + dhcp_failure_rate;
 
-    //wifi_util_info_print(WIFI_CTRL,
-      //  "SCORE caffinity %s:%d failure_ratio=%.4f (auth=%.4f, assoc=%.4f, dhcp=%.4f)\n",
-        //__func__, __LINE__, failure_ratio, auth_failure_rate, assoc_failure_rate, dhcp_failure_rate);
 
     // Normalize SNR to [0, 1] range (max SNR assumed 70)
     if (cli_snr > 0) {
@@ -292,7 +268,7 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
     // Calculate final score: (1 - failure_ratio) * snr_squared * sigmoid_factor
     score = (1.0 - failure_ratio) * snr_squared * sigmoid_factor;
 
-    wifi_util_dbg_print(WIFI_APPS, "caffinity %s:%d FINAL SCORE=%.4f for MAC %s connected %d\n",
+    lq_util_dbg_print(LQ_CAFF, "caffinity %s:%d FINAL SCORE=%.4f for MAC %s connected %d\n",
         __func__, __LINE__, score, m_mac, m_connected);
     
     result.score = score ;

@@ -27,6 +27,7 @@
 #include "run_qmgr.h"
 #include <algorithm>
 #include <string>
+#include "linkquality_util.h"
 
 using ap_mac_str_t = std::string;
 

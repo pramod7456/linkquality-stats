@@ -21,7 +21,7 @@
 #include "vector.h"
 #include "sequence.h"
 #include "wifi_hal.h"
-#include "wifi_util.h"
+#include "linkquality_util.h"
 #include "qmgr.h"
 #include "run_qmgr.h"
 
@@ -81,30 +81,30 @@ extern "C" void qmgr_invoke_score(const char *str, double score,double threshold
 {
     if (qmgr_score_cb)
         qmgr_score_cb(str, score,threshold);
-    wifi_util_error_print(WIFI_CTRL,"%s:%d \n",__func__,__LINE__); 
+    lq_util_error_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
 }
 extern "C" void qmgr_invoke_max_snr_callback(int radio_index,int max_snr)
 {
-    wifi_util_error_print(WIFI_CTRL,"%s:%d \n",__func__,__LINE__); 
+    lq_util_error_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     if (g_qmgr_snr_cb) 
         g_qmgr_snr_cb(radio_index,max_snr);
-    wifi_util_error_print(WIFI_CTRL,"%s:%d \n",__func__,__LINE__); 
+    lq_util_error_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
 
 }
 
 
 extern "C" void qmgr_invoke_t2_callback(char **str,int count,double avg_lq_score,double avg_caff_score,double avg_ucaff_score)
 {
-    wifi_util_error_print(WIFI_CTRL,"%s:%d \n",__func__,__LINE__); 
+    lq_util_error_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     if (qmgr_t2_cb) 
         qmgr_t2_cb(str,count,avg_lq_score,avg_caff_score,avg_ucaff_score);
-    wifi_util_error_print(WIFI_CTRL,"%s:%d \n",__func__,__LINE__); 
+    lq_util_error_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
 
 }
 
 int reinit_link_metrics(server_arg_t *ser_arg)
 {
-    wifi_util_info_print(WIFI_APPS,"started add_stats stats->\n"); 
+    lq_util_info_print(LQ_LQTY,"started add_stats stats->\n"); 
     server_arg_t arg;
     memset(&arg, 0, sizeof(server_arg_t));
     if ( ser_arg->sampling == 0) {
@@ -124,7 +124,7 @@ int reinit_link_metrics(server_arg_t *ser_arg)
     }
     qmgr_t *qmgr;
     qmgr = qmgr_t::get_instance();   // always returns SAME instance
-    wifi_util_info_print(WIFI_APPS,"%s:%d reporting=%d threshold =%f\n",__func__,__LINE__,arg.reporting,arg.threshold); 
+    lq_util_info_print(LQ_LQTY,"%s:%d reporting=%d threshold =%f\n",__func__,__LINE__,arg.reporting,arg.threshold); 
 
     qmgr->reinit(&arg); 
     return 0;
@@ -137,7 +137,7 @@ int start_link_metrics()
     qmgr = qmgr_t::get_instance();   // always returns SAME instance
 
     qmgr->start_background_run(); 
-    wifi_util_info_print(WIFI_APPS,"%s:%d \n",__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     return 0;
 }
 
@@ -148,7 +148,7 @@ void register_station_mac(const char* str)
     qmgr = qmgr_t::get_instance();   // always returns SAME instance
 
     qmgr->register_station_mac(str); 
-    wifi_util_info_print(WIFI_APPS,"%s:%d \n",__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     return ;
 }
 
@@ -160,7 +160,7 @@ void unregister_station_mac(const char* str)
 
     qmgr->unregister_station_mac(str); 
     qmgr_score_cb = NULL;
-    wifi_util_info_print(WIFI_APPS,"%s:%d \n",__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     return ;
 }
 
@@ -176,14 +176,14 @@ char*  get_link_metrics()
 int stop_link_metrics()
 {
     qmgr_t::destroy_instance(); 
-    wifi_util_info_print(WIFI_APPS,"%s:%d \n",__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     return 0;
 }
 
 int add_stats_metrics(stats_arg_t *stats,int len)
 {
     qmgr_t *qmgr;
-    wifi_util_dbg_print(WIFI_APPS,"mac_address=%s  snr=%d and phy=%d\n",stats->mac_str,stats->dev.cli_SNR,stats->dev.cli_LastDataDownlinkRate); 
+    lq_util_dbg_print(LQ_LQTY,"mac_address=%s  snr=%d and phy=%d\n",stats->mac_str,stats->dev.cli_SNR,stats->dev.cli_LastDataDownlinkRate); 
     
     qmgr = qmgr_t::get_instance();   // always returns SAME instance
     for (int i =0;i<len;i++) {
@@ -199,7 +199,7 @@ int disconnect_link_stats( stats_arg_t  *stats)
     qmgr_t *qmgr;
     qmgr = qmgr_t::get_instance();   // always returns SAME instance
     qmgr->rapid_disconnect(stats);
-    wifi_util_info_print(WIFI_APPS,"mac_str=%s %s:%d \n",stats->mac_str,__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"mac_str=%s %s:%d \n",stats->mac_str,__func__,__LINE__); 
     return 0;
 }
 
@@ -209,27 +209,27 @@ int remove_link_stats( stats_arg_t  *stats)
     qmgr_t *qmgr;
     qmgr = qmgr_t::get_instance();   // always returns SAME instance
     qmgr->init(stats,false);
-    wifi_util_info_print(WIFI_APPS,"mac_str=%s %s:%d \n",stats->mac_str,__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"mac_str=%s %s:%d \n",stats->mac_str,__func__,__LINE__); 
     return 0;
 }
 
 int set_quality_flags(quality_flags_t *flag)
 {
-    wifi_util_info_print(WIFI_APPS,"%s:%d \n",__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     qmgr_t::set_quality_flags(flag);
     return 0;
 }
 
 int get_quality_flags(quality_flags_t *flag)
 {
-    wifi_util_info_print(WIFI_APPS,"%s:%d \n",__func__,__LINE__); 
+    lq_util_info_print(LQ_LQTY,"%s:%d \n",__func__,__LINE__); 
     qmgr_t::get_quality_flags(flag);
     return 0;
 }
 
 int set_max_snr_radios(radio_max_snr_t *max_snr_val)
 {
-    wifi_util_info_print(WIFI_APPS,"started  %s:%d \n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"started  %s:%d \n",__func__,__LINE__);
     qmgr_t *mgr;
     mgr = qmgr_t::get_instance();   // always returns SAME instance
     mgr->set_max_snr_radios(max_snr_val);
@@ -239,7 +239,7 @@ int set_max_snr_radios(radio_max_snr_t *max_snr_val)
 
 int periodic_caffinity_stats_update(stats_arg_t *stats,int len)
 {
-    wifi_util_info_print(WIFI_APPS,"started  %s:%d mac=%s\n",__func__,__LINE__, stats->mac_str);
+    lq_util_info_print(LQ_LQTY,"started  %s:%d mac=%s\n",__func__,__LINE__, stats->mac_str);
     qmgr_t *mgr;
     mgr = qmgr_t::get_instance();   // always returns SAME instance
     for (int i =0;i<len;i++) {
@@ -257,11 +257,11 @@ bool is_client_connected(const char *mac_str)
 
 int store_gw_mac(uint8_t *mac)
 {
-    wifi_util_info_print(WIFI_APPS,"started  %s:%d \n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"started  %s:%d \n",__func__,__LINE__);
     return qmgr_t::store_gw_mac(mac);
 }
 int get_gw_mac(uint8_t *mac)
 {
-    wifi_util_info_print(WIFI_APPS,"started  %s:%d \n",__func__,__LINE__);
+    lq_util_info_print(LQ_LQTY,"started  %s:%d \n",__func__,__LINE__);
     return qmgr_t::get_gw_mac(mac);
 }
