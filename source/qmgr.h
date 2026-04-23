@@ -21,7 +21,7 @@
 
 #include <pthread.h>
 #include <cjson/cJSON.h>
-#include "collection.h"
+//#include "collection.h"
 #include "run_qmgr.h"
 #include <vector>
 #include <algorithm>

@@ -33,10 +33,12 @@ bin_PROGRAMS = linkquality_stats
 
 linkquality_stats_SOURCES = \
 	$(top_srcdir)/source/linkquality_stats_main.c \
-	$(top_srcdir)/source/run_gmgr.cpp \
+	$(top_srcdir)/source/run_qmgr.cpp \
 	$(top_srcdir)/source/qmgr.cpp \
-	$(top_srcdir)/source/link.cpp \
-	$(top_srcdir)/source/caffinity.cpp \
+	$(top_srcdir)/source/linkq.cpp \
+	$(top_srcdir)/source/caffinity.cpp
+
+linkquality_stats_CPPFLAGS = -I${PKG_CONFIG_SYSROOT_DIR}${includedir}  -I${PKG_CONFIG_SYSROOT_DIR}${includedir}/ccsp -I${PKG_CONFIG_SYSROOT_DIR}${libdir}/ -DEXTERNAL_USE_ONLY
 
 linkquality_stats_LDFLAGS = \
 	-lrbus \

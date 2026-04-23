@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
-    wifi_util_info_print(WIFI_LQ, "%s:%d starting linkquality_stats process\n", __func__, __LINE__);
+    wifi_util_info_print(WIFI_CTRL, "%s:%d starting linkquality_stats process\n", __func__, __LINE__);
 
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
         pause();   /* sleep until signal */
     }
 
-    wifi_util_info_print(WIFI_LQ, "%s:%d shutting down linkquality_stats\n", __func__, __LINE__);
+    wifi_util_info_print(WIFI_CTRL, "%s:%d shutting down linkquality_stats\n", __func__, __LINE__);
 
     return EXIT_SUCCESS;
 }
