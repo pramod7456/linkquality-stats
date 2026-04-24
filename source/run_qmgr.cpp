@@ -24,6 +24,7 @@
 #include "linkquality_util.h"
 #include "qmgr.h"
 #include "run_qmgr.h"
+#include "web.h"
 
 //Static callback functions
 static qmgr_report_batch_cb_t qmgr_batch_cb = NULL;
@@ -264,4 +265,46 @@ int get_gw_mac(uint8_t *mac)
 {
     lq_util_info_print(LQ_LQTY,"started  %s:%d \n",__func__,__LINE__);
     return qmgr_t::get_gw_mac(mac);
+}
+
+/*
+ * run_web_server – starts the embedded HTTP server on port 8082.
+ * Mirrors the same function in OneWifi's run_qmgr.cpp.
+ * Flow: main -> run_web_server -> web_t::start -> accept thread.
+ */
+int run_web_server(void)
+{
+    web_t *web;
+    const char *path = "/www/data";
+    lq_util_info_print(LQ_LQTY, "%s:%d starting webserver at %s\n", __func__, __LINE__, path);
+    web = web_t::get_instance(path);
+    web->start();
+    lq_util_info_print(LQ_LQTY, "%s:%d webserver started\n", __func__, __LINE__);
+    return 0;
+}
+
+/*
+ * stop_web_server – stops the embedded HTTP server.
+ */
+int stop_web_server(void)
+{
+    const char *path = "/www/data";
+    lq_util_info_print(LQ_LQTY, "stopping webserver %s:%d\n", __func__, __LINE__);
+    web_t *web = web_t::get_instance(path);
+    web->stop();
+    lq_util_info_print(LQ_LQTY, "webserver stopped\n");
+    return 0;
+}
+
+/*
+ * post_web_message – stores a status string in the webserver singleton.
+ * The string is returned at GET /api/status and shown in index.html.
+ * Flow: main -> post_web_message -> web_t::set_message -> served at /api/status.
+ */
+void post_web_message(const char *msg)
+{
+    const char *path = "/www/data";
+    lq_util_info_print(LQ_LQTY, "%s:%d posting message: %s\n", __func__, __LINE__, msg ? msg : "");
+    web_t *web = web_t::get_instance(path);
+    web->set_message(msg);
 }

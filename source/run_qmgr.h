@@ -158,6 +158,14 @@ int get_gw_mac(uint8_t *mac);
 /* Check if a client is connected using caffinity tracking */
 bool is_client_connected(const char *mac_str);
 
+/* Webserver lifecycle – mirrors OneWifi run_qmgr webserver helpers */
+int run_web_server(void);
+int stop_web_server(void);
+
+/* Post a status message from the calling process into the webserver.
+ * The message is served at GET /api/status and displayed in index.html. */
+void post_web_message(const char *msg);
+
 #ifdef __cplusplus
 }
 #endif

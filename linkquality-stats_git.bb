@@ -29,6 +29,8 @@ LDFLAGS:append = " \
     -lwifi_webserver \
     -lwifi_math_utils \
     -lstdc++ \
+    -lpthread \
+    -lm \
 "
 
 ISSYSTEMD = "${@bb.utils.contains('DISTRO_FEATURES', 'systemd', 'true', 'false', d)}"

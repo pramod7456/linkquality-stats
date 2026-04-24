@@ -1,21 +1,15 @@
 [Unit]
-Description=WiFi Link Quality Stats Process
-After=onewifi.service
-Requires=onewifi.service
+Description=WiFi Link Quality Stats Daemon
+After=network.target
 
 [Service]
 Type=forking
 PIDFile=/var/tmp/linkquality_stats.pid
-LimitSTACK=4096K
-WorkingDirectory=/usr/ccsp/linkquality_stats
-Environment="Subsys=eRT."
-Environment="LOG4C_RCPATH=/etc"
-EnvironmentFile=/etc/device.properties
-ExecStart=/bin/sh -c '/usr/bin/linkquality_stats -subsys $Subsys'
-ExecStopPost=/bin/sh -c 'echo "`date`: Stopping/Restarting linkquality_stats" >> ${PROCESS_RESTART_LOG}'
-TimeoutStartSec=120
-Restart=always
+# libmemfnswrap.so hooks allocators via dlsym(RTLD_NEXT,"memalign").
+# LD_PRELOADing it places it at link-map position #2 so RTLD_NEXT covers libc.
 Environment="LD_PRELOAD=/usr/lib/libmemfnswrap.so.0"
+ExecStart=/usr/bin/linkquality_stats
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
