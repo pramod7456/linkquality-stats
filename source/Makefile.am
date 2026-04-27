@@ -45,6 +45,7 @@ bin_PROGRAMS = linkquality_stats
 
 linkquality_stats_SOURCES = \
 	$(top_srcdir)/source/linkquality_stats_main.c \
+	$(top_srcdir)/source/lq_ipc_receiver.c \
 	$(top_srcdir)/source/run_qmgr.cpp \
 	$(top_srcdir)/source/qmgr.cpp \
 	$(top_srcdir)/source/linkq.cpp \
@@ -53,7 +54,7 @@ linkquality_stats_SOURCES = \
 	$(top_srcdir)/source/utils/linkquality_util.c \
 	$(top_srcdir)/source/utils/collection.c
 
-linkquality_stats_CPPFLAGS = -I${PKG_CONFIG_SYSROOT_DIR}${includedir}  -I${PKG_CONFIG_SYSROOT_DIR}${includedir}/ccsp -I${PKG_CONFIG_SYSROOT_DIR}${libdir}/ -DEXTERNAL_USE_ONLY \
+linkquality_stats_CPPFLAGS = -I${PKG_CONFIG_SYSROOT_DIR}${includedir}  -I${PKG_CONFIG_SYSROOT_DIR}${includedir}/ccsp -I${PKG_CONFIG_SYSROOT_DIR}${libdir}/ -DEXTERNAL_USE_ONLY
 
 linkquality_stats_LDFLAGS = \
 	-lrbus \
