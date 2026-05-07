@@ -31,8 +31,63 @@
 
 qmgr_t* qmgr_t::instance = NULL;
 uint8_t qmgr_t::m_gw_mac[6] = {0};
-extern "C" void qmgr_invoke_batch(const report_batch_t *batch);
-extern "C" void qmgr_invoke_t2_callback(char **str,int count,double avg_lq_score,double avg_caff_score,double avg_ucaff_score);
+
+/* ---- Callback infrastructure (moved from run_qmgr.cpp) ---- */
+static qmgr_report_batch_cb_t qmgr_batch_cb = NULL;
+static qmgr_report_score_cb_t qmgr_score_cb = NULL;
+static qmgr_max_snr_cb_t g_qmgr_snr_cb = NULL;
+
+void qmgr_register_batch_callback(qmgr_report_batch_cb_t cb)
+{
+    qmgr_batch_cb = cb;
+}
+
+void qmgr_register_max_snr_callback(qmgr_max_snr_cb_t cb)
+{
+    g_qmgr_snr_cb = cb;
+}
+
+void qmgr_register_score_callback(qmgr_report_score_cb_t cb)
+{
+    qmgr_score_cb = cb;
+}
+
+bool qmgr_is_batch_registered(void)
+{
+    return (qmgr_batch_cb != NULL);
+}
+
+bool qmgr_is_score_registered(void)
+{
+    return (qmgr_score_cb != NULL);
+}
+
+void reset_qmgr_score_cb(void)
+{
+    qmgr_score_cb = NULL;
+}
+
+void qmgr_invoke_batch(const report_batch_t *batch)
+{
+    if (qmgr_batch_cb)
+        qmgr_batch_cb(batch);
+}
+
+void qmgr_invoke_score(const char *str, double score, double threshold)
+{
+    if (qmgr_score_cb)
+        qmgr_score_cb(str, score, threshold);
+    lq_util_error_print(LQ_LQTY, "%s:%d \n", __func__, __LINE__);
+}
+
+void qmgr_invoke_max_snr_callback(int radio_index, int max_snr)
+{
+    lq_util_error_print(LQ_LQTY, "%s:%d \n", __func__, __LINE__);
+    if (g_qmgr_snr_cb)
+        g_qmgr_snr_cb(radio_index, max_snr);
+    lq_util_error_print(LQ_LQTY, "%s:%d \n", __func__, __LINE__);
+}
+/* ---- End callback infrastructure ---- */
 
 qmgr_t* qmgr_t::get_instance()
 {

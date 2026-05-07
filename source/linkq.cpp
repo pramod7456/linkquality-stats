@@ -27,14 +27,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-extern "C" void qmgr_invoke_score(const char *str, double score, double threshold);
 // static member initialization
 
 linkq_params_t linkq_t::m_linkq_params[MAX_LINKQ_PARAMS] = {{"DOWNLINK_SNR", true}, {"DOWNLINK_PER", false}, {"DOWNLINK_PHY", true},{"UPLINK_SNR", true}, {"UPLINK_PER", false}, {"UPLINK_PHY", true}};
 
 mac_addr_str_t linkq_t::ignite_station_mac = "";
-
-extern "C" void qmgr_invoke_max_snr_callback(int radio_index,int max_snr);
 
 radio_max_snr_t linkq_t::max_snr_radio_val = {25,25,25};
 linkq_params_t linkq_t::m_score_params[] = {

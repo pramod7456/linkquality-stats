@@ -41,7 +41,9 @@
 #include <pthread.h>
 #include <unistd.h>
 #include "linkquality_stats_rbus.h"
-#include "run_qmgr.h"
+#include <netinet/in.h>
+#include "qmgr.h"
+#include "web.h"
 #include "linkquality_util.h"
 #include "lq_ipc_receiver.h"
 
@@ -237,16 +239,19 @@ int main(int argc, char *argv[])
     }
 #endif
     /* Start the embedded webserver (port 8082).
-     * Flow: main -> run_web_server -> web_t::start -> accept loop thread. */
-    run_web_server();
-
-    /* Post the initial status message into the webserver.
-     * Flow: main -> post_web_message -> web_t::set_message
-     *    -> served at GET /api/status -> displayed in index.html. */
-    //post_web_message("from main");
+     * Flow: main -> web_t::start -> accept loop thread. */
+    {
+        web_t *web = web_t::get_instance("/www/data");
+        web->start();
+        lq_util_info_print(LQ_LQTY, "%s:%d webserver started\n", __func__, __LINE__);
+    }
 
     /* Start background link-quality metrics collection (single call) */
-    start_link_metrics();
+    {
+        qmgr_t *qmgr = qmgr_t::get_instance();
+        qmgr->start_background_run();
+        lq_util_info_print(LQ_LQTY, "%s:%d link metrics started\n", __func__, __LINE__);
+    }
 
     /* Start IPC receiver for AF_UNIX events from OneWifi */
     if (lq_ipc_receiver_start() != 0) {

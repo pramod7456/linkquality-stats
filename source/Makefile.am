@@ -46,12 +46,11 @@ AM_CXXFLAGS += \
 bin_PROGRAMS = linkquality_stats
 
 linkquality_stats_SOURCES = \
-	$(top_srcdir)/source/linkquality_stats_main.c \
-	$(top_srcdir)/source/run_qmgr.cpp \
+	$(top_srcdir)/source/linkquality_stats_main.cpp \
 	$(top_srcdir)/source/qmgr.cpp \
 	$(top_srcdir)/source/linkq.cpp \
 	$(top_srcdir)/source/caffinity.cpp \
-	$(top_srcdir)/source/lq_ipc_receiver.c \
+	$(top_srcdir)/source/lq_ipc_receiver.cpp \
 	$(top_srcdir)/source/utils/webserver/src/web.cpp \
 	$(top_srcdir)/source/utils/linkquality_util.c \
 	$(top_srcdir)/source/utils/collection.c

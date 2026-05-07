@@ -26,7 +26,7 @@
 
 #include "lq_ipc_receiver.h"
 #include "linkquality_util.h"
-#include "run_qmgr.h"
+#include "qmgr.h"
 
 /* ---- IPC protocol (must match ccsp-one-wifi lq_ipc_sender.h) ---- */
 
@@ -138,8 +138,15 @@ static void *receiver_thread(void *arg)
                     (long long)entries[i].total_connected_time.tv_sec,
                     (long long)entries[i].total_disconnected_time.tv_sec);
             }
-            add_stats_metrics(entries, (int)count);
-            periodic_caffinity_stats_update(entries, (int)count);
+            {
+                qmgr_t *qmgr = qmgr_t::get_instance();
+                for (uint32_t i = 0; i < count; i++) {
+                    qmgr->init(&entries[i], true);
+                }
+                for (uint32_t i = 0; i < count; i++) {
+                    qmgr->caffinity_periodic_stats_update(&entries[i]);
+                }
+            }
             break;
 
         case LQ_IPC_MSG_DISCONNECT:
@@ -151,7 +158,12 @@ static void *receiver_thread(void *arg)
                     entries[i].status_code,
                     (long long)entries[i].total_connected_time.tv_sec,
                     (long long)entries[i].total_disconnected_time.tv_sec);
-                remove_link_stats(&entries[i]);
+            }
+            {
+                qmgr_t *qmgr = qmgr_t::get_instance();
+                for (uint32_t i = 0; i < count; i++) {
+                    qmgr->init(&entries[i], false);
+                }
             }
             break;
 
@@ -164,7 +176,12 @@ static void *receiver_thread(void *arg)
                     entries[i].status_code,
                     (long long)entries[i].total_connected_time.tv_sec,
                     (long long)entries[i].total_disconnected_time.tv_sec);
-                disconnect_link_stats(&entries[i]);
+            }
+            {
+                qmgr_t *qmgr = qmgr_t::get_instance();
+                for (uint32_t i = 0; i < count; i++) {
+                    qmgr->rapid_disconnect(&entries[i]);
+                }
             }
             break;
 
@@ -180,20 +197,25 @@ static void *receiver_thread(void *arg)
                     (long long)entries[i].total_connected_time.tv_sec,
                     (long long)entries[i].total_disconnected_time.tv_sec,
                     entries[i].dhcp_event, entries[i].dhcp_msg_type);
-                periodic_caffinity_stats_update(&entries[i], 1);
+            }
+            {
+                qmgr_t *qmgr = qmgr_t::get_instance();
+                for (uint32_t i = 0; i < count; i++) {
+                    qmgr->caffinity_periodic_stats_update(&entries[i]);
+                }
             }
             break;
 
         case LQ_IPC_MSG_START_METRICS:
             lq_util_info_print(LQ_LQTY,
                 "%s:%d START_METRICS\n", __func__, __LINE__);
-            start_link_metrics();
+            qmgr_t::get_instance()->start_background_run();
             break;
 
         case LQ_IPC_MSG_STOP_METRICS:
             lq_util_info_print(LQ_LQTY,
                 "%s:%d STOP_METRICS\n", __func__, __LINE__);
-            stop_link_metrics();
+            qmgr_t::destroy_instance();
             break;
 
         case LQ_IPC_MSG_REGISTER_STA:
@@ -202,7 +224,7 @@ static void *receiver_thread(void *arg)
             const char *mac_str = (const char *)(buf + sizeof(lq_ipc_header_t));
             lq_util_info_print(LQ_LQTY,
                 "%s:%d REGISTER_STA mac=%s\n", __func__, __LINE__, mac_str);
-            register_station_mac(mac_str);
+            qmgr_t::get_instance()->register_station_mac(mac_str);
             break;
         }
 
@@ -211,7 +233,7 @@ static void *receiver_thread(void *arg)
             const char *mac_str = (const char *)(buf + sizeof(lq_ipc_header_t));
             lq_util_info_print(LQ_LQTY,
                 "%s:%d UNREGISTER_STA mac=%s\n", __func__, __LINE__, mac_str);
-            unregister_station_mac(mac_str);
+            qmgr_t::get_instance()->unregister_station_mac(mac_str);
             break;
         }
 
@@ -221,7 +243,7 @@ static void *receiver_thread(void *arg)
             lq_util_info_print(LQ_LQTY,
                 "%s:%d REINIT_METRICS reporting=%u threshold=%f\n",
                 __func__, __LINE__, sarg->reporting, sarg->threshold);
-            reinit_link_metrics(sarg);
+            qmgr_t::get_instance()->reinit(sarg);
             break;
         }
 
@@ -232,7 +254,7 @@ static void *receiver_thread(void *arg)
                 "%s:%d SET_MAX_SNR 2g=%d 5g=%d 6g=%d\n",
                 __func__, __LINE__, snr->radio_2g_max_snr,
                 snr->radio_5g_max_snr, snr->radio_6g_max_snr);
-            set_max_snr_radios(snr);
+            qmgr_t::get_instance()->set_max_snr_radios(snr);
             break;
         }
 
