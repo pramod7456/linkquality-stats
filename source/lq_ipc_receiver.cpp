@@ -43,18 +43,20 @@
 #define LQ_IPC_MSG_REINIT_METRICS   9
 #define LQ_IPC_MSG_SET_MAX_SNR     10
 
+/* ---- TLV wire format (must mirror lq_ipc_sender.h) ---- */
+
+/* LQ TLV — the entire datagram is a single TLV, no outer header. */
 typedef struct {
-    uint32_t msg_type;
-    uint32_t num_entries;
-} lq_ipc_header_t;
+    uint8_t  type;   /* LQ_IPC_MSG_* (1-10) */
+    uint16_t len;    /* payload byte count */
+    uint8_t  value[0];
+} __attribute__((packed)) lq_tlv_t;
 
 /* ---- internal state ---- */
 
 static int              g_sock      = -1;
 static pthread_t        g_thread;
 static volatile sig_atomic_t g_exit = 0;
-
-#define LQ_IPC_BUF_SZ  65536
 
 static const char *msg_type_to_str(uint32_t type)
 {
@@ -73,19 +75,86 @@ static const char *msg_type_to_str(uint32_t type)
     }
 }
 
+/*
+ * parse_tlv - validate and extract type/payload from a raw TLV datagram.
+ *
+ * The entire datagram IS the TLV (no outer header). The receiver derives
+ * element count from payload_sz / sizeof(element_type) as needed.
+ *
+ * On success: sets *msg_type_out, *payload, and *payload_sz, returns 0.
+ * On error:   returns -1.
+ */
+static int parse_tlv(const uint8_t *buf, size_t buf_sz,
+                     uint32_t *msg_type_out,
+                     const uint8_t **payload, size_t *payload_sz)
+{
+    if (buf_sz < sizeof(lq_tlv_t)) {
+        lq_util_error_print(LQ_LQTY,
+            "[IPC-RECV][TLV] datagram too short: %zu < %zu\n",
+            buf_sz, sizeof(lq_tlv_t));
+        return -1;
+    }
+
+    const lq_tlv_t *tlv = (const lq_tlv_t *)buf;
+    size_t val_sz = (size_t)tlv->len;
+
+    if (sizeof(lq_tlv_t) + val_sz > buf_sz) {
+        lq_util_error_print(LQ_LQTY,
+            "[IPC-RECV][TLV] payload overruns datagram: "
+            "tlv->len=%zu + header=%zu > buf_sz=%zu\n",
+            val_sz, sizeof(lq_tlv_t), buf_sz);
+        return -1;
+    }
+
+    *msg_type_out = tlv->type;
+    *payload      = tlv->value;
+    *payload_sz   = val_sz;
+    return 0;
+}
+
 static void *receiver_thread(void *arg)
 {
     (void)arg;
-    uint8_t buf[LQ_IPC_BUF_SZ];
 
     lq_util_info_print(LQ_LQTY,
         "%s:%d IPC receiver thread started, listening on %s\n",
         __func__, __LINE__, LQ_STATS_SOCKET_PATH);
 
     while (!g_exit) {
-        ssize_t n = recvfrom(g_sock, buf, sizeof(buf), 0, NULL, NULL);
+        /* Step 1: peek at the 3-byte TLV header to learn the payload size */
+        lq_tlv_t hdr_peek;
+        ssize_t peeked = recvfrom(g_sock, &hdr_peek, sizeof(hdr_peek), MSG_PEEK, NULL, NULL);
 
+        if (peeked < 0) {
+            if (errno == EINTR) continue;
+            if (g_exit) break;
+            lq_util_error_print(LQ_LQTY,
+                "%s:%d recvfrom(peek) failed: %s\n", __func__, __LINE__, strerror(errno));
+            continue;
+        }
+        if (peeked < (ssize_t)sizeof(lq_tlv_t)) {
+            char drain[1];
+            recvfrom(g_sock, drain, sizeof(drain), 0, NULL, NULL);
+            lq_util_error_print(LQ_LQTY,
+                "%s:%d short datagram (%zd bytes), dropping\n", __func__, __LINE__, peeked);
+            continue;
+        }
+
+        /* Step 2: allocate exactly what this datagram needs */
+        size_t alloc_sz = sizeof(lq_tlv_t) + (size_t)hdr_peek.len;
+        uint8_t *buf = (uint8_t *)malloc(alloc_sz);
+        if (!buf) {
+            char drain[1];
+            recvfrom(g_sock, drain, sizeof(drain), 0, NULL, NULL);
+            lq_util_error_print(LQ_LQTY,
+                "%s:%d malloc(%zu) failed, dropping\n", __func__, __LINE__, alloc_sz);
+            continue;
+        }
+
+        /* Step 3: consume the full datagram into the exact-sized buffer */
+        ssize_t n = recvfrom(g_sock, buf, alloc_sz, 0, NULL, NULL);
         if (n < 0) {
+            free(buf);
             if (errno == EINTR) continue;
             if (g_exit) break;
             lq_util_error_print(LQ_LQTY,
@@ -93,44 +162,29 @@ static void *receiver_thread(void *arg)
             continue;
         }
 
-        if (n < (ssize_t)sizeof(lq_ipc_header_t)) {
+        const uint8_t *payload  = NULL;
+        size_t         data_sz  = 0;
+        uint32_t       msg_type = 0;
+
+        if (parse_tlv(buf, (size_t)n, &msg_type, &payload, &data_sz) < 0) {
             lq_util_error_print(LQ_LQTY,
-                "%s:%d short datagram (%zd bytes), ignoring\n", __func__, __LINE__, n);
+                "%s:%d [IPC-RECV] TLV parse failed, dropping\n", __func__, __LINE__);
+            free(buf);
             continue;
         }
 
-        lq_ipc_header_t *hdr = (lq_ipc_header_t *)buf;
-        uint32_t count = hdr->num_entries;
-        size_t payload_sz = (size_t)n - sizeof(lq_ipc_header_t);
-
-        /*
-         * For stats_arg_t-bearing messages, validate the payload size.
-         * Other messages (START/STOP/REGISTER/UNREGISTER/REINIT/SET_MAX_SNR)
-         * carry different-sized or no payloads and are validated per-case.
-         */
-        if (hdr->msg_type <= LQ_IPC_MSG_CAFFINITY_EVENT && count > 0) {
-            size_t expected_data = count * sizeof(stats_arg_t);
-            if (payload_sz < expected_data) {
-                lq_util_error_print(LQ_LQTY,
-                    "%s:%d truncated datagram (got %zd, need %zu), ignoring\n",
-                    __func__, __LINE__, n,
-                    sizeof(lq_ipc_header_t) + expected_data);
-                continue;
-            }
-        }
-
-        stats_arg_t *entries = (stats_arg_t *)(buf + sizeof(lq_ipc_header_t));
-
         lq_util_info_print(LQ_LQTY,
-            "%s:%d IPC event: type=%s(%u) count=%u\n",
-            __func__, __LINE__,
-            msg_type_to_str(hdr->msg_type), hdr->msg_type, count);
+            "%s:%d [IPC-RECV] type=%s(%u) data_sz=%zu datagram_bytes=%zd\n",
+            __func__, __LINE__, msg_type_to_str(msg_type), msg_type, data_sz, n);
 
-        switch (hdr->msg_type) {
+        switch (msg_type) {
         case LQ_IPC_MSG_PERIODIC_STATS:
-            for (uint32_t i = 0; i < count; i++) {
+        {
+            size_t count = data_sz / sizeof(stats_arg_t);
+            stats_arg_t *entries = (stats_arg_t *)payload;
+            for (size_t i = 0; i < count; i++) {
                 lq_util_info_print(LQ_LQTY,
-                    "%s:%d PERIODIC_STATS [%u/%u] MAC=%s snr=%d vap=%u radio=%u "
+                    "%s:%d PERIODIC_STATS [%zu/%zu] MAC=%s snr=%d vap=%u radio=%u "
                     "status_code=%u conn_time=%llds disconn_time=%llds\n",
                     __func__, __LINE__, i + 1, count, entries[i].mac_str,
                     entries[i].dev.cli_SNR, entries[i].vap_index,
@@ -140,17 +194,21 @@ static void *receiver_thread(void *arg)
             }
             {
                 qmgr_t *qmgr = qmgr_t::get_instance();
-                for (uint32_t i = 0; i < count; i++) {
+                for (size_t i = 0; i < count; i++) {
                     qmgr->init(&entries[i], true);
                 }
-                for (uint32_t i = 0; i < count; i++) {
+                for (size_t i = 0; i < count; i++) {
                     qmgr->caffinity_periodic_stats_update(&entries[i]);
                 }
             }
             break;
+        }
 
         case LQ_IPC_MSG_DISCONNECT:
-            for (uint32_t i = 0; i < count; i++) {
+        {
+            size_t count = data_sz / sizeof(stats_arg_t);
+            stats_arg_t *entries = (stats_arg_t *)payload;
+            for (size_t i = 0; i < count; i++) {
                 lq_util_info_print(LQ_LQTY,
                     "%s:%d DISCONNECT MAC=%s status_code=%u "
                     "conn_time=%llds disconn_time=%llds\n",
@@ -161,14 +219,18 @@ static void *receiver_thread(void *arg)
             }
             {
                 qmgr_t *qmgr = qmgr_t::get_instance();
-                for (uint32_t i = 0; i < count; i++) {
+                for (size_t i = 0; i < count; i++) {
                     qmgr->init(&entries[i], false);
                 }
             }
             break;
+        }
 
         case LQ_IPC_MSG_RAPID_DISCONNECT:
-            for (uint32_t i = 0; i < count; i++) {
+        {
+            size_t count = data_sz / sizeof(stats_arg_t);
+            stats_arg_t *entries = (stats_arg_t *)payload;
+            for (size_t i = 0; i < count; i++) {
                 lq_util_info_print(LQ_LQTY,
                     "%s:%d RAPID_DISCONNECT MAC=%s status_code=%u "
                     "conn_time=%llds disconn_time=%llds\n",
@@ -179,15 +241,18 @@ static void *receiver_thread(void *arg)
             }
             {
                 qmgr_t *qmgr = qmgr_t::get_instance();
-                for (uint32_t i = 0; i < count; i++) {
+                for (size_t i = 0; i < count; i++) {
                     qmgr->rapid_disconnect(&entries[i]);
                 }
             }
             break;
+        }
 
         case LQ_IPC_MSG_CAFFINITY_EVENT:
-            /* Single HAL/DHCP event for caffinity */
-            for (uint32_t i = 0; i < count; i++) {
+        {
+            size_t count = data_sz / sizeof(stats_arg_t);
+            stats_arg_t *entries = (stats_arg_t *)payload;
+            for (size_t i = 0; i < count; i++) {
                 lq_util_info_print(LQ_LQTY,
                     "[linkstatus] %s:%d CAFFINITY_EVENT MAC=%s event=%d "
                     "status_code=%u conn_time=%llds disconn_time=%llds "
@@ -200,11 +265,12 @@ static void *receiver_thread(void *arg)
             }
             {
                 qmgr_t *qmgr = qmgr_t::get_instance();
-                for (uint32_t i = 0; i < count; i++) {
+                for (size_t i = 0; i < count; i++) {
                     qmgr->caffinity_periodic_stats_update(&entries[i]);
                 }
             }
             break;
+        }
 
         case LQ_IPC_MSG_START_METRICS:
             lq_util_info_print(LQ_LQTY,
@@ -220,8 +286,7 @@ static void *receiver_thread(void *arg)
 
         case LQ_IPC_MSG_REGISTER_STA:
         {
-            /* Payload is a null-terminated MAC string */
-            const char *mac_str = (const char *)(buf + sizeof(lq_ipc_header_t));
+            const char *mac_str = (const char *)payload;
             lq_util_info_print(LQ_LQTY,
                 "%s:%d REGISTER_STA mac=%s\n", __func__, __LINE__, mac_str);
             qmgr_t::get_instance()->register_station_mac(mac_str);
@@ -230,7 +295,7 @@ static void *receiver_thread(void *arg)
 
         case LQ_IPC_MSG_UNREGISTER_STA:
         {
-            const char *mac_str = (const char *)(buf + sizeof(lq_ipc_header_t));
+            const char *mac_str = (const char *)payload;
             lq_util_info_print(LQ_LQTY,
                 "%s:%d UNREGISTER_STA mac=%s\n", __func__, __LINE__, mac_str);
             qmgr_t::get_instance()->unregister_station_mac(mac_str);
@@ -239,7 +304,13 @@ static void *receiver_thread(void *arg)
 
         case LQ_IPC_MSG_REINIT_METRICS:
         {
-            server_arg_t *sarg = (server_arg_t *)(buf + sizeof(lq_ipc_header_t));
+            if (data_sz < sizeof(server_arg_t)) {
+                lq_util_error_print(LQ_LQTY,
+                    "%s:%d REINIT_METRICS: payload too small (%zu < %zu), dropping\n",
+                    __func__, __LINE__, data_sz, sizeof(server_arg_t));
+                break;
+            }
+            server_arg_t *sarg = (server_arg_t *)payload;
             lq_util_info_print(LQ_LQTY,
                 "%s:%d REINIT_METRICS reporting=%u threshold=%f\n",
                 __func__, __LINE__, sarg->reporting, sarg->threshold);
@@ -249,7 +320,13 @@ static void *receiver_thread(void *arg)
 
         case LQ_IPC_MSG_SET_MAX_SNR:
         {
-            radio_max_snr_t *snr = (radio_max_snr_t *)(buf + sizeof(lq_ipc_header_t));
+            if (data_sz < sizeof(radio_max_snr_t)) {
+                lq_util_error_print(LQ_LQTY,
+                    "%s:%d SET_MAX_SNR: payload too small (%zu < %zu), dropping\n",
+                    __func__, __LINE__, data_sz, sizeof(radio_max_snr_t));
+                break;
+            }
+            radio_max_snr_t *snr = (radio_max_snr_t *)payload;
             lq_util_info_print(LQ_LQTY,
                 "%s:%d SET_MAX_SNR 2g=%d 5g=%d 6g=%d\n",
                 __func__, __LINE__, snr->radio_2g_max_snr,
@@ -261,9 +338,11 @@ static void *receiver_thread(void *arg)
         default:
             lq_util_error_print(LQ_LQTY,
                 "%s:%d unknown IPC msg_type=%u, ignoring\n",
-                __func__, __LINE__, hdr->msg_type);
+                __func__, __LINE__, msg_type);
             break;
         }
+
+        free(buf);
     }
 
     lq_util_info_print(LQ_LQTY,
