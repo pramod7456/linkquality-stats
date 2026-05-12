@@ -28,6 +28,7 @@
 #include <string>
 #include <unordered_map>
 #include "linkq.h"
+#include "ipc_receiver.h"
 #include "caffinity.h"
 #include "linkquality_util.h"
 
@@ -37,7 +38,7 @@
 /* DHCP event flag for affinity updates */
 #define DHCP_EVENT_UPDATE    1
 
-
+class ipc_recv_t;
 class qmgr_t {
     pthread_mutex_t m_lock;
     pthread_cond_t m_cond;
@@ -52,7 +53,8 @@ class qmgr_t {
     pthread_t m_thread;
     bool m_run_started;
     bool m_bg_running;
-    static uint8_t m_gw_mac[6];
+    ipc_recv_t *m_ipc;
+    
     cJSON *out_obj;
     cJSON *affinity_obj;
     cJSON *caffinity_out_obj;  // Separate JSON for caffinity telemetry

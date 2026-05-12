@@ -45,7 +45,7 @@
 #include "qmgr.h"
 #include "web.h"
 #include "linkquality_util.h"
-#include "lq_ipc_receiver.h"
+#include "ipc_receiver.h"
 
 #define COMPONENT_NAME          "linkquality_stats"
 #define LQ_PID_FILE             "/var/tmp/linkquality_stats.pid"
@@ -229,15 +229,7 @@ int main(int argc, char *argv[])
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
     signal(SIGPIPE, SIG_IGN);
-#if 0
-    if (lq_stats_rbus_init() != 0) {
-        lq_util_error_print(LQ_LQTY, "%s:%d rbus init failed\n", __func__, __LINE__);
-        sem_post(g_sem);
-        sem_close(g_sem);
-        unlink(LQ_PID_FILE);
-        return EXIT_FAILURE;
-    }
-#endif
+    
     /* Start the embedded webserver (port 8082).
      * Flow: main -> web_t::start -> accept loop thread. */
     {
@@ -252,25 +244,20 @@ int main(int argc, char *argv[])
         qmgr->start_background_run();
         lq_util_info_print(LQ_LQTY, "%s:%d link metrics started\n", __func__, __LINE__);
     }
+    /* Event-driven: rbus dispatches callbacks on its own threads.
+     * lq_loop() keeps the daemon alive with periodic + on-demand wakeups. */
+    lq_loop();
 
-    /* Start IPC receiver for AF_UNIX events from OneWifi */
-    if (lq_ipc_receiver_start() != 0) {
-        lq_util_error_print(LQ_LQTY, "%s:%d IPC receiver start failed\n", __func__, __LINE__);
-    }
+
 
     /* Signal parent: init done, parent (systemd) can exit cleanly */
     sem_post(g_sem);
     sem_close(g_sem);
     g_sem = SEM_FAILED;
 
-    /* Event-driven: rbus dispatches callbacks on its own threads.
-     * lq_loop() keeps the daemon alive with periodic + on-demand wakeups. */
-    lq_loop();
-
     lq_util_info_print(LQ_LQTY, "%s:%d shutting down linkquality_stats\n",
                        __func__, __LINE__);
    
-    lq_ipc_receiver_stop();
 
     unlink(LQ_PID_FILE);
 

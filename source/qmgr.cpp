@@ -30,7 +30,6 @@
 #include "collection.h"
 
 qmgr_t* qmgr_t::instance = NULL;
-uint8_t qmgr_t::m_gw_mac[6] = {0};
 
 /* ---- Callback infrastructure (moved from run_qmgr.cpp) ---- */
 static qmgr_report_batch_cb_t qmgr_batch_cb = NULL;
@@ -591,34 +590,6 @@ cJSON *qmgr_t::create_caffinity_template(mac_addr_str_t mac_str)
     return obj;
 }
 
-#if 0
-void qmgr_t::deinit()
-{
-    m_exit = true;
-    pthread_cond_signal(&m_cond);
-
-    // Wait for thread to finish
-    pthread_join(m_thread, NULL);
-    pthread_cond_destroy(&m_cond);
-    
-    // Clean up caffinity map
-    std::unordered_map<std::string, caffinity_t*>::iterator caff_it;
-    for (caff_it = m_caffinity_map.begin(); caff_it != m_caffinity_map.end(); ++caff_it) {
-        delete caff_it->second;
-    }
-    m_caffinity_map.clear();
-    
-    hash_map_destroy(m_link_map);
-    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
-    return;
-}
-
-void qmgr_t::deinit(mac_addr_str_t mac_str)
-{
-    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
-    return;
-}
-#endif
 
  void qmgr_t::remove_device_from_out_obj(cJSON *out_obj, const char *mac_str)
 {
@@ -1034,7 +1005,7 @@ qmgr_t::qmgr_t()
     m_rms_unconn_count = 0;
     m_rms_lq_sum_sq = 0.0;
     m_rms_lq_count = 0;
-    
+   m_ipc = new ipc_recv_t(); 
     m_bg_running = false;
     m_exit = false;
     pthread_mutex_init(&m_json_lock, NULL);
@@ -1104,6 +1075,7 @@ int qmgr_t::get_quality_flags(quality_flags_t *flag)
 }
 qmgr_t::~qmgr_t()
 {
+  delete m_ipc;
 }
 
 cJSON* qmgr_t::create_affinity_template(mac_addr_str_t mac_str,

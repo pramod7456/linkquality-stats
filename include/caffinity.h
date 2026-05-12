@@ -38,6 +38,7 @@ typedef struct {
     bool connected;
 } caffinity_result_t;
 
+#if 0
 typedef enum {
     DHCP_DISCOVER = 1,
     DHCP_OFFER    = 2,
@@ -47,7 +48,7 @@ typedef enum {
     DHCP_NAK      = 6,
     DHCP_UNKNOWN
 } dhcp_pkt_type_t;
-
+#endif
 class caffinity_t
 {
     pthread_mutex_t m_lock;
