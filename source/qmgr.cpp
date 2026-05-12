@@ -117,7 +117,7 @@ void  qmgr_t::trim_cjson_array(cJSON *arr, int max_len)
     }
 }
 
-void qmgr_t::update_json(const char *str, vector_t v, cJSON *out_obj, bool &alarm)
+void qmgr_t::update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm)
 {
     pthread_mutex_lock(&m_json_lock);
     char tmp[MAX_LINE_SIZE];
@@ -158,15 +158,12 @@ void qmgr_t::update_json(const char *str, vector_t v, cJSON *out_obj, bool &alar
     for (i = 0; i < MAX_SCORE_PARAMS; i++) {
         arr = cJSON_GetObjectItem(obj, params->name);
         if (arr) {
-            cJSON_AddItemToArray(arr, cJSON_CreateNumber(v.m_val[i].m_re));
+            lq_score_map_t::const_iterator val_it = u_map.find(params->name);
+            double val = (val_it != u_map.end()) ? val_it->second : 0.0;
+            cJSON_AddItemToArray(arr, cJSON_CreateNumber(val));
             trim_cjson_array(arr, MAX_HISTORY);
         }
         params++;
-    }
-
-    if (v.m_num > MAX_LEN) {
-        pthread_mutex_unlock(&m_json_lock);
-        return;
     }
 
     arr = cJSON_GetObjectItem(obj, "Alarms");
@@ -396,7 +393,7 @@ int qmgr_t::run()
     struct timeval tm;
     struct timeval start_time;
     linkq_t *lq;
-    vector_t v;
+    lq_score_map_t u_map;
     bool alarm = false;
     bool rapid_disconnect = false;
     long elapsed_sec = 0;
@@ -425,14 +422,14 @@ int qmgr_t::run()
             double lq_sum_sq_iter = 0.0;
             int lq_count_iter = 0;
             while (lq != NULL) {
-                v = lq->run_test(alarm, update_alarm, rapid_disconnect);
-                if (v.m_num == 0 && !rapid_disconnect) {
+                u_map = lq->run_test(alarm, update_alarm, rapid_disconnect);
+                if (u_map.empty() && !rapid_disconnect) {
                     lq = (linkq_t *)hash_map_get_next(m_link_map, lq);
                     continue;
                 }
-                update_json(lq->get_mac_addr(), v, out_obj, alarm);
+                update_json(lq->get_mac_addr(), u_map, out_obj, alarm);
 
-                double lq_score = v.m_val[SCORE_INDEX].m_re;
+                double lq_score = u_map["Score"];
                 lq_sum_sq_iter += lq_score * lq_score;
                 lq_count_iter++;
 

@@ -83,11 +83,11 @@ static inline double apply_rapid_reconnect(double norm,int remaining,
     return val;
 }
 
-vector_t linkq_t::run_algorithm(linkq_data_t data,
+lq_score_map_t linkq_t::run_algorithm(linkq_data_t data,
                                 bool &alarm,
                                 bool update_alarm,int channel_utilization)
 {
-    vector_t v;
+    lq_score_map_t u_map;
     alarm = false;
 
     double norm[6] = {0.0};
@@ -110,9 +110,11 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
         m_quality_flag.uplink_per,m_quality_flag.uplink_phy,m_quality_flag.aggregate);
     
 
-    v.m_num = 12;
-    for (int i = 0; i < v.m_num; i++)
-        v.m_val[i].m_re = 0.0;
+    // Initialize all score keys to 0.0
+    u_map["SNR"] = 0.0; u_map["PER"] = 0.0; u_map["PHY"] = 0.0;
+    u_map["DOWNLINK_SNR"] = 0.0; u_map["DOWNLINK_PER"] = 0.0; u_map["DOWNLINK_PHY"] = 0.0;
+    u_map["UPLINK_SNR"] = 0.0; u_map["UPLINK_PER"] = 0.0; u_map["UPLINK_PHY"] = 0.0;
+    u_map["DOWNLINK_Score"] = 0.0; u_map["UPLINK_Score"] = 0.0; u_map["Score"] = 0.0;
 
     // -------------------------------------------------
     // Normalize enabled inputs
@@ -160,13 +162,13 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
     // -------------------------------------------------
     // Store raw normalized values
     // -------------------------------------------------
-    v.m_val[3].m_re  = m_quality_flag.downlink_snr ? norm[0] : 0.0;
-    v.m_val[4].m_re  = m_quality_flag.downlink_per ? norm[1] : 0.0;
-    v.m_val[5].m_re  = m_quality_flag.downlink_phy ? norm[2] : 0.0;
+    u_map["DOWNLINK_SNR"]  = m_quality_flag.downlink_snr ? norm[0] : 0.0;
+    u_map["DOWNLINK_PER"]  = m_quality_flag.downlink_per ? norm[1] : 0.0;
+    u_map["DOWNLINK_PHY"]  = m_quality_flag.downlink_phy ? norm[2] : 0.0;
 
-    v.m_val[6].m_re  = m_quality_flag.uplink_snr   ? norm[3] : 0.0;
-    v.m_val[7].m_re  = m_quality_flag.uplink_per   ? norm[4] : 0.0;
-    v.m_val[8].m_re = m_quality_flag.uplink_phy   ? norm[5] : 0.0;
+    u_map["UPLINK_SNR"]    = m_quality_flag.uplink_snr   ? norm[3] : 0.0;
+    u_map["UPLINK_PER"]    = m_quality_flag.uplink_per   ? norm[4] : 0.0;
+    u_map["UPLINK_PHY"]    = m_quality_flag.uplink_phy   ? norm[5] : 0.0;
 
     // -------------------------------------------------
     // Aggregate SNR / PER / PHY
@@ -175,29 +177,29 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
     if (m_quality_flag.aggregate) {
         lq_util_dbg_print(LQ_LQTY,"In Aggregte %s:%d\n",__func__,__LINE__);
         cnt = 0;
-        if (m_quality_flag.downlink_snr) { v.m_val[0].m_re += norm[0]; cnt++; }
-        if (m_quality_flag.uplink_snr)   { v.m_val[0].m_re += norm[3]; cnt++; }
-        if (cnt) v.m_val[0].m_re /= cnt;
+        if (m_quality_flag.downlink_snr) { u_map["SNR"] += norm[0]; cnt++; }
+        if (m_quality_flag.uplink_snr)   { u_map["SNR"] += norm[3]; cnt++; }
+        if (cnt) u_map["SNR"] /= cnt;
 
         cnt = 0;
-        if (m_quality_flag.downlink_per) { v.m_val[1].m_re += norm[1]; cnt++; }
-        if (m_quality_flag.uplink_per)   { v.m_val[1].m_re += norm[4]; cnt++; }
-        if (cnt) v.m_val[1].m_re /= cnt;
+        if (m_quality_flag.downlink_per) { u_map["PER"] += norm[1]; cnt++; }
+        if (m_quality_flag.uplink_per)   { u_map["PER"] += norm[4]; cnt++; }
+        if (cnt) u_map["PER"] /= cnt;
 
         cnt = 0;
-        if (m_quality_flag.downlink_phy) { v.m_val[2].m_re += norm[2]; cnt++; }
-        if (m_quality_flag.uplink_phy)   { v.m_val[2].m_re += norm[5]; cnt++; }
-        if (cnt) v.m_val[2].m_re /= cnt;
+        if (m_quality_flag.downlink_phy) { u_map["PHY"] += norm[2]; cnt++; }
+        if (m_quality_flag.uplink_phy)   { u_map["PHY"] += norm[5]; cnt++; }
+        if (cnt) u_map["PHY"] /= cnt;
 
-        m_data_sample.snr   = v.m_val[0].m_re;
-        m_data_sample.per   = v.m_val[1].m_re;
-        m_data_sample.phy   = v.m_val[2].m_re;
+        m_data_sample.snr   = u_map["SNR"];
+        m_data_sample.per   = u_map["PER"];
+        m_data_sample.phy   = u_map["PHY"];
          
     } else {
-        v.m_val[0].m_re = 0;
-        v.m_val[1].m_re = 0;
-        v.m_val[2].m_re = 0;
-        v.m_val[11].m_re = 0;
+        u_map["SNR"]   = 0;
+        u_map["PER"]   = 0;
+        u_map["PHY"]   = 0;
+        u_map["Score"] = 0;
 
     }
     // -------------------------------------------------
@@ -205,28 +207,28 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
     // -------------------------------------------------
     cnt = 0;
     if (m_quality_flag.downlink_snr) {
-        v.m_val[9].m_re += m_linkq_params[0].booster
-            ? pow(v.m_val[3].m_re, 2)
-            : (1 - pow(v.m_val[3].m_re, 2));
+        u_map["DOWNLINK_Score"] += m_linkq_params[0].booster
+            ? pow(u_map["DOWNLINK_SNR"], 2)
+            : (1 - pow(u_map["DOWNLINK_SNR"], 2));
         cnt++;
-        m_data_sample.snr   = v.m_val[3].m_re;
+        m_data_sample.snr   = u_map["DOWNLINK_SNR"];
     }
     if (m_quality_flag.downlink_per) {
-        v.m_val[9].m_re += m_linkq_params[1].booster
-            ? pow(v.m_val[4].m_re, 2)
-            :(1 - pow(v.m_val[4].m_re, 2));
+        u_map["DOWNLINK_Score"] += m_linkq_params[1].booster
+            ? pow(u_map["DOWNLINK_PER"], 2)
+            :(1 - pow(u_map["DOWNLINK_PER"], 2));
         cnt++;
     }
     if (m_quality_flag.downlink_phy) {
-        v.m_val[9].m_re += m_linkq_params[2].booster
-            ? pow(v.m_val[5].m_re, 2)
-            : (1 - pow(v.m_val[5].m_re, 2));
+        u_map["DOWNLINK_Score"] += m_linkq_params[2].booster
+            ? pow(u_map["DOWNLINK_PHY"], 2)
+            : (1 - pow(u_map["DOWNLINK_PHY"], 2));
         cnt++;
     }
-    if (v.m_val[9].m_re < 0.0 || cnt == 0)
-        v.m_val[9].m_re = 0.0;
+    if (u_map["DOWNLINK_Score"] < 0.0 || cnt == 0)
+        u_map["DOWNLINK_Score"] = 0.0;
     else {
-        v.m_val[9].m_re = sqrt(v.m_val[9].m_re / cnt) * 
+        u_map["DOWNLINK_Score"] = sqrt(u_map["DOWNLINK_Score"] / cnt) * 
             (1.0 / (1.0 + exp(-(LINK_QTY_B0 + LINK_QTY_B1 * channel_utilization))));
     }
 
@@ -235,27 +237,27 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
     // -------------------------------------------------
     cnt = 0;
     if (m_quality_flag.uplink_snr) {
-        v.m_val[10].m_re += m_linkq_params[3].booster
-            ? pow(v.m_val[6].m_re, 2)
-            : (1 - pow(v.m_val[6].m_re, 2));
+        u_map["UPLINK_Score"] += m_linkq_params[3].booster
+            ? pow(u_map["UPLINK_SNR"], 2)
+            : (1 - pow(u_map["UPLINK_SNR"], 2));
         cnt++;
     }
     if (m_quality_flag.uplink_per) {
-        v.m_val[10].m_re += m_linkq_params[4].booster
-            ? pow(v.m_val[7].m_re, 2)
-            : (1 - pow(v.m_val[7].m_re, 2));
+        u_map["UPLINK_Score"] += m_linkq_params[4].booster
+            ? pow(u_map["UPLINK_PER"], 2)
+            : (1 - pow(u_map["UPLINK_PER"], 2));
             cnt++;
     }
     if (m_quality_flag.uplink_phy) {
-        v.m_val[10].m_re += m_linkq_params[5].booster
-            ? pow(v.m_val[8].m_re, 2)
-            : (1 - pow(v.m_val[8].m_re, 2));
+        u_map["UPLINK_Score"] += m_linkq_params[5].booster
+            ? pow(u_map["UPLINK_PHY"], 2)
+            : (1 - pow(u_map["UPLINK_PHY"], 2));
         cnt++;
     }
-    if (v.m_val[10].m_re < 0.0 || cnt == 0)
-        v.m_val[10].m_re = 0.0;
+    if (u_map["UPLINK_Score"] < 0.0 || cnt == 0)
+        u_map["UPLINK_Score"] = 0.0;
     else {
-        v.m_val[10].m_re = sqrt(v.m_val[10].m_re / cnt) *
+        u_map["UPLINK_Score"] = sqrt(u_map["UPLINK_Score"] / cnt) *
             (1.0 / (1.0 + exp(-(LINK_QTY_B0 + LINK_QTY_B1 * channel_utilization))));
     }
 
@@ -263,18 +265,19 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
     // Aggregate Score
     // -------------------------------------------------
     cnt = 0;
+    static const char* agg_keys[3] = {"SNR", "PER", "PHY"};
     for (int i = 0; i < 3; i++) {
-        if (v.m_val[i].m_re > 0.0) {
-            v.m_val[11].m_re += m_linkq_params[i].booster
-                ? pow(v.m_val[i].m_re, 2)
-                :(1 - pow(v.m_val[i].m_re, 2));
+        if (u_map[agg_keys[i]] > 0.0) {
+            u_map["Score"] += m_linkq_params[i].booster
+                ? pow(u_map[agg_keys[i]], 2)
+                :(1 - pow(u_map[agg_keys[i]], 2));
             cnt++;
         }
     }
-    if (v.m_val[11].m_re < 0.0 || cnt == 0)
-        v.m_val[11].m_re = 0.0;
+    if (u_map["Score"] < 0.0 || cnt == 0)
+        u_map["Score"] = 0.0;
     else {
-        v.m_val[11].m_re = sqrt(v.m_val[11].m_re / cnt) *
+        u_map["Score"] = sqrt(u_map["Score"] / cnt) *
             (1.0 / (1.0 + exp(-(LINK_QTY_B0 + LINK_QTY_B1 * channel_utilization))));
     }
 
@@ -282,53 +285,53 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
     // Alarm logic
     // -------------------------------------------------
     m_sampled++;
-    lq_util_dbg_print(LQ_LQTY,"%s:%d aggscore = %f,downlink score=%f uplinkscore=%f\n",__func__,__LINE__,v.m_val[11].m_re,v.m_val[9].m_re,v.m_val[10].m_re);
+    lq_util_dbg_print(LQ_LQTY,"%s:%d aggscore = %f,downlink score=%f uplinkscore=%f\n",__func__,__LINE__,u_map["Score"],u_map["DOWNLINK_Score"],u_map["UPLINK_Score"]);
     
     if ( (m_quality_flag.aggregate)) {
-        m_data_sample.score = v.m_val[11].m_re;
-        if (v.m_val[11].m_re < m_threshold) {
+        m_data_sample.score = u_map["Score"];
+        if (u_map["Score"] < m_threshold) {
             m_threshold_cross_counter++;
             if (is_ignite_station && qmgr_is_score_registered()) {
                 lq_util_dbg_print(LQ_LQTY,
                     "%s:%d score=%f threshold=%f Invoking the score callback for ignite\n",
-                    __func__, __LINE__, v.m_val[11].m_re, m_threshold);
-                qmgr_invoke_score(mac,v.m_val[11].m_re,m_threshold);
+                    __func__, __LINE__, u_map["Score"], m_threshold);
+                qmgr_invoke_score(mac,u_map["Score"],m_threshold);
             }
         }
     } else if ((m_quality_flag.downlink_snr || m_quality_flag.downlink_per || m_quality_flag.downlink_phy)
         && (m_quality_flag.uplink_snr || m_quality_flag.uplink_per || m_quality_flag.uplink_phy)) {
-         m_data_sample.score  = (v.m_val[9].m_re + v.m_val[10].m_re)/2;
-        if(v.m_val[9].m_re < m_threshold || v.m_val[10].m_re < m_threshold) {
+         m_data_sample.score  = (u_map["DOWNLINK_Score"] + u_map["UPLINK_Score"])/2;
+        if(u_map["DOWNLINK_Score"] < m_threshold || u_map["UPLINK_Score"] < m_threshold) {
             m_threshold_cross_counter++;
             if (is_ignite_station && qmgr_is_score_registered()) {
                 lq_util_dbg_print(LQ_LQTY,
                     "%s:%d score=%f threshold=%f Invoking the score callback for ignite\n",
-                    __func__, __LINE__, v.m_val[9].m_re, v.m_val[10].m_re, m_threshold);
-                if (v.m_val[9].m_re < m_threshold)
-                    qmgr_invoke_score(mac,v.m_val[9].m_re,m_threshold);
-                else if (v.m_val[10].m_re < m_threshold)
-                    qmgr_invoke_score(mac,v.m_val[10].m_re,m_threshold);
+                    __func__, __LINE__, u_map["DOWNLINK_Score"], u_map["UPLINK_Score"], m_threshold);
+                if (u_map["DOWNLINK_Score"] < m_threshold)
+                    qmgr_invoke_score(mac,u_map["DOWNLINK_Score"],m_threshold);
+                else if (u_map["UPLINK_Score"] < m_threshold)
+                    qmgr_invoke_score(mac,u_map["UPLINK_Score"],m_threshold);
 	    }
         }
     } else if (m_quality_flag.downlink_snr || m_quality_flag.downlink_per || m_quality_flag.downlink_phy) {
-        m_data_sample.score = v.m_val[9].m_re;
-        if(v.m_val[9].m_re < m_threshold)
+        m_data_sample.score = u_map["DOWNLINK_Score"];
+        if(u_map["DOWNLINK_Score"] < m_threshold)
             m_threshold_cross_counter++;
         if ( is_ignite_station && qmgr_is_score_registered()) {
             lq_util_dbg_print(LQ_LQTY,
                 "%s:%d score=%f threshold=%f Invoking the score callback for ignite\n", __func__,
-                __LINE__, v.m_val[9].m_re, m_threshold);
-            qmgr_invoke_score(mac,v.m_val[9].m_re,m_threshold);
+                __LINE__, u_map["DOWNLINK_Score"], m_threshold);
+            qmgr_invoke_score(mac,u_map["DOWNLINK_Score"],m_threshold);
         }
     } else if (m_quality_flag.uplink_snr || m_quality_flag.uplink_per || m_quality_flag.uplink_phy) {
-        m_data_sample.score = v.m_val[10].m_re;
-        if(v.m_val[10].m_re < m_threshold)
+        m_data_sample.score = u_map["UPLINK_Score"];
+        if(u_map["UPLINK_Score"] < m_threshold)
             m_threshold_cross_counter++;
         if (is_ignite_station && qmgr_is_score_registered()) {
             lq_util_dbg_print(LQ_LQTY,
                 "%s:%d score=%f threshold=%f Invoking the score callback for ignite\n", __func__,
-                __LINE__, v.m_val[10].m_re, m_threshold);
-            qmgr_invoke_score(mac,v.m_val[10].m_re,m_threshold);
+                __LINE__, u_map["UPLINK_Score"], m_threshold);
+            qmgr_invoke_score(mac,u_map["UPLINK_Score"],m_threshold);
         }
     }
     m_window_samples.push_back(m_data_sample);
@@ -339,11 +342,11 @@ vector_t linkq_t::run_algorithm(linkq_data_t data,
         m_sampled = 0;
         m_threshold_cross_counter = 0;
     }
-    return v;
+    return u_map;
 }
-vector_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_disconnect)
+lq_score_map_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_disconnect)
 {
-    vector_t v;
+    lq_score_map_t u_map;
     linkq_data_t data;
     pthread_mutex_lock(&m_vec_lock);
     alarm = false;
@@ -356,7 +359,7 @@ vector_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_disconnec
         lq_util_dbg_print(LQ_LQTY,"In disconnect lost %d\n",m_disconnect_samples);
         rapid_disconnect =  true;
         alarm = false;
-        return vector_t(0);   // no data while disconnected
+        return lq_score_map_t();   // no data while disconnected
     }
 
     // Reconnect detected: start recovery
@@ -375,7 +378,7 @@ vector_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_disconnec
             "%s:%d: Failed to load record \n",
             __func__, __LINE__
         );
-        return vector_t(0);
+        return lq_score_map_t();
     }
     const stats_arg_t stat = m_stats_arr[0];   // COPY, not reference
     pthread_mutex_unlock(&m_vec_lock);
@@ -396,7 +399,7 @@ vector_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_disconnec
         }
     }
 
-    v = run_algorithm(data, alarm, update_alarm,stat.channel_utilization);
+    u_map = run_algorithm(data, alarm, update_alarm,stat.channel_utilization);
 
     // One recovery step per successful sample
     if (m_recovery_remaining > 0) {
@@ -407,7 +410,7 @@ vector_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_disconnec
     }
 
     m_current++;
-    return v;
+    return u_map;
 }
 void linkq_t::update_window_per()
 {

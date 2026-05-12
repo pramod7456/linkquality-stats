@@ -26,7 +26,11 @@
 #include "run_qmgr.h"
 #include <vector>
 #include <deque>
+#include <unordered_map>
+#include <string>
 #include "linkquality_util.h"
+
+typedef std::unordered_map<std::string, double> lq_score_map_t;
 #define MAX_LINE_SIZE   1024
 #define MAX_LINKQ_PARAMS    6
 #define MAX_SCORE_PARAMS    12
@@ -71,8 +75,8 @@ class linkq_t {
     static quality_flags_t m_quality_flag;
     static radio_max_snr_t max_snr_radio_val;
 public:
-    vector_t run_test(bool &alarm,bool update_alarm,bool &rapid_disconnect);
-    vector_t run_algorithm(linkq_data_t data, bool &alarm, bool update_alarm,int channel_util);
+    lq_score_map_t run_test(bool &alarm,bool update_alarm,bool &rapid_disconnect);
+    lq_score_map_t run_algorithm(linkq_data_t data, bool &alarm, bool update_alarm,int channel_util);
     int init(double threshold, unsigned int reporting_mult,stats_arg_t *stats);
     size_t get_window_samples(sample_t **out_samples); 
     int reinit(server_arg_t *arg);
