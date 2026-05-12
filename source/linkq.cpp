@@ -111,11 +111,7 @@ lq_score_map_t linkq_t::run_algorithm(linkq_data_t data,
     
 
     // Initialize all score keys to 0.0
-    u_map["SNR"] = 0.0; u_map["PER"] = 0.0; u_map["PHY"] = 0.0;
-    u_map["DOWNLINK_SNR"] = 0.0; u_map["DOWNLINK_PER"] = 0.0; u_map["DOWNLINK_PHY"] = 0.0;
-    u_map["UPLINK_SNR"] = 0.0; u_map["UPLINK_PER"] = 0.0; u_map["UPLINK_PHY"] = 0.0;
-    u_map["DOWNLINK_Score"] = 0.0; u_map["UPLINK_Score"] = 0.0; u_map["Score"] = 0.0;
-
+    u_map.clear();
     // -------------------------------------------------
     // Normalize enabled inputs
     // -------------------------------------------------

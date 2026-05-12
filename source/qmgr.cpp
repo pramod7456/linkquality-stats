@@ -154,18 +154,19 @@ void qmgr_t::update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, 
         return;
     }
 
-    linkq_params_t *params = linkq_t::get_score_params();
-    for (i = 0; i < MAX_SCORE_PARAMS; i++) {
-        arr = cJSON_GetObjectItem(obj, params->name);
-        if (arr) {
-            lq_score_map_t::const_iterator val_it = u_map.find(params->name);
-            double val = (val_it != u_map.end()) ? val_it->second : 0.0;
-            cJSON_AddItemToArray(arr, cJSON_CreateNumber(val));
-            trim_cjson_array(arr, MAX_HISTORY);
-        }
-        params++;
-    }
+    for (lq_score_map_t::const_iterator it = u_map.begin();it != u_map.end(); ++it)
+    {
+        const std::string& key = it->first;
+        double val = it->second;
 
+        cJSON *arr = cJSON_GetObjectItem(obj, key.c_str());
+        if (!arr)
+            continue;
+
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(val));
+        trim_cjson_array(arr, MAX_HISTORY);
+    }
+ 
     arr = cJSON_GetObjectItem(obj, "Alarms");
     if (arr) {
         cJSON_AddItemToArray(arr, cJSON_CreateString(alarm ? get_local_time(tmp, sizeof(tmp), false) : ""));
@@ -486,8 +487,6 @@ int qmgr_t::run()
                 pthread_mutex_unlock(&m_json_lock);
             }
             update_caffinity_graph();
-            char metrics_buf[4096];
-            build_and_print_metrics_string(metrics_buf, sizeof(metrics_buf));
             count = hash_map_count(m_link_map);
             if (count == 0 ) {
                 remove(m_args.output_file);
@@ -1067,10 +1066,9 @@ qmgr_t::qmgr_t(server_arg_t *args,stats_arg_t *stats)
     m_rms_unconn_count = 0;
     m_rms_lq_sum_sq = 0.0;
     m_rms_lq_count = 0;
-    
+    m_link_map = hash_map_create();
     m_exit = false;
     m_bg_running = false;
-    m_link_map = hash_map_create();
     out_obj = cJSON_CreateObject();
     affinity_obj = cJSON_CreateObject();
     pthread_mutex_init(&m_json_lock, NULL);
@@ -1124,67 +1122,3 @@ cJSON* qmgr_t::create_affinity_template(mac_addr_str_t mac_str,
     return obj;
 }
 
-void qmgr_t::build_and_print_metrics_string(char *buf, int buf_len)
-{
-    int offset = 0;
-    linkq_t *lq;
-    sample_t *samples = NULL;
-    size_t sample_count;
-
-    // --- LinkQ section ---
-    offset += snprintf(buf + offset, buf_len - offset, "[LinkQ]");
-
-    lq = (linkq_t *)hash_map_get_first(m_link_map);
-    while (lq != NULL && offset < buf_len - 1) {
-        sample_count = lq->get_window_samples(&samples);
-        if (sample_count > 0) {
-            const sample_t *s = &samples[sample_count - 1]; // most recent
-            offset += snprintf(buf + offset, buf_len - offset,
-                " MAC=%s SNR=%.2f PER=%.2f PHY=%.2f Score=%.2f |",
-                lq->get_mac_addr(), s->snr, s->per, s->phy, s->score);
-            free(samples);
-            samples = NULL;
-        }
-        lq = (linkq_t *)hash_map_get_next(m_link_map, lq);
-    }
-
-    // --- Caffinity section ---
-    offset += snprintf(buf + offset, buf_len - offset, " [Caffinity]");
-
-    pthread_mutex_lock(&m_json_lock);
-    std::unordered_map<std::string, caffinity_t*>::iterator caff_it;
-    for (caff_it = m_caffinity_map.begin();
-         caff_it != m_caffinity_map.end() && offset < buf_len - 1;
-         ++caff_it) {
-        caffinity_t *caff = caff_it->second;
-        if (!caff) continue;
-        caffinity_result_t result = caff->run_algorithm_caffinity();
-        struct timespec conn_t  = caff->get_connected_time();
-        struct timespec disc_t  = caff->get_disconnected_time();
-        offset += snprintf(buf + offset, buf_len - offset,
-            " MAC=%s Score=%.2f ConnTime=%ld.%03lds DiscTime=%ld.%03lds |",
-            result.mac, result.score,
-            (long)conn_t.tv_sec,  conn_t.tv_nsec  / 1000000L,
-            (long)disc_t.tv_sec,  disc_t.tv_nsec  / 1000000L);
-    }
-    pthread_mutex_unlock(&m_json_lock);
-
-    lq_util_info_print(LQ_LQTY, "%s:%d Metrics: %s\n", __func__, __LINE__, buf);
-}
-
-int qmgr_t::store_gw_mac(uint8_t *mac) 
-{
-    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
-    memcpy(m_gw_mac,mac,sizeof(m_gw_mac));
-   return 0;
-}
-int qmgr_t::get_gw_mac(uint8_t *mac)
-{
-    lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
-    if (!mac) {
-        return -1;
-    }
-
-    memcpy(mac, m_gw_mac, sizeof(m_gw_mac));
-    return 0;
-}

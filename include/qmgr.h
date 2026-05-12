@@ -34,6 +34,8 @@
 #define MAX_FILE_NAME_SZ 1024
 #define MAX_PATH_SZ MAX_FILE_NAME_SZ
 #define MAX_HISTORY 15
+/* DHCP event flag for affinity updates */
+#define DHCP_EVENT_UPDATE    1
 
 
 class qmgr_t {
@@ -42,8 +44,6 @@ class qmgr_t {
     server_arg_t    m_args;
     pthread_mutex_t m_json_lock;
     stats_arg_t    m_stats;
-    linkq_t *lq;
-    caffinity_t *caff;
     hash_map_t *m_link_map;
     static qmgr_t *instance;
     qmgr_t();
@@ -104,9 +104,6 @@ public:
     int update_affinity_stats(stats_arg_t *arg,bool flag);
     int caffinity_periodic_stats_update(stats_arg_t *stats);
     bool is_client_connected(const char *mac_str);
-    static int store_gw_mac(uint8_t *mac);
-    static int get_gw_mac(uint8_t *mac);
-    void build_and_print_metrics_string(char *buf, int buf_len);
     ~qmgr_t();
 };
 

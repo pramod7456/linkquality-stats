@@ -38,6 +38,16 @@ typedef struct {
     bool connected;
 } caffinity_result_t;
 
+typedef enum {
+    DHCP_DISCOVER = 1,
+    DHCP_OFFER    = 2,
+    DHCP_REQUEST  = 3,
+    DHCP_DECLINE  = 4,
+    DHCP_ACK      = 5,
+    DHCP_NAK      = 6,
+    DHCP_UNKNOWN
+} dhcp_pkt_type_t;
+
 class caffinity_t
 {
     pthread_mutex_t m_lock;

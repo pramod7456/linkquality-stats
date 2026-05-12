@@ -30,7 +30,6 @@
 #include <string>
 #include "linkquality_util.h"
 
-typedef std::unordered_map<std::string, double> lq_score_map_t;
 #define MAX_LINE_SIZE   1024
 #define MAX_LINKQ_PARAMS    6
 #define MAX_SCORE_PARAMS    12
@@ -43,6 +42,8 @@ typedef struct {
 } linkq_params_t;
 
 typedef float linkq_data_t[MAX_LINKQ_PARAMS];
+
+typedef std::unordered_map<std::string, double> lq_score_map_t;
 
 class linkq_t {
     mac_addr_str_t m_mac;
