@@ -27,7 +27,6 @@
 #include <math.h>
 #include <vector>
 #include <cjson/cJSON.h>
-#include "collection.h"
 
 qmgr_t* qmgr_t::instance = NULL;
 
@@ -116,9 +115,8 @@ void  qmgr_t::trim_cjson_array(cJSON *arr, int max_len)
     }
 }
 
-void qmgr_t::update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm)
+void qmgr_t::update_json_unlocked(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm)
 {
-    pthread_mutex_lock(&m_json_lock);
     char tmp[MAX_LINE_SIZE];
     unsigned int i;
     cJSON *arr, *obj, *dev_obj;
@@ -126,14 +124,14 @@ void qmgr_t::update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, 
 
     arr = cJSON_GetObjectItem(out_obj, "Devices");
     if (!arr) {
-        pthread_mutex_unlock(&m_json_lock);
         return;
     }
 
     int arr_size = cJSON_GetArraySize(arr);
     for (i = 0; i < (unsigned int)arr_size; i++) {
         dev_obj = cJSON_GetArrayItem(arr, i);
-        if (strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(dev_obj, "MAC")), str) == 0) {
+        const char *dev_mac = cJSON_GetStringValue(cJSON_GetObjectItem(dev_obj, "MAC"));
+        if (dev_mac && strcmp(dev_mac, str) == 0) {
             found = true;
             break;
         }
@@ -142,14 +140,12 @@ void qmgr_t::update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, 
     if (!found) {
         lq_util_dbg_print(LQ_LQTY,"%s:%d Device %s not found in Devices array (array size=%d)\n",
             __func__,__LINE__, str, arr_size);
-        pthread_mutex_unlock(&m_json_lock);
         return;
     }
 
     obj = cJSON_GetObjectItem(dev_obj, "LinkQuality");
     if (!obj) {
         lq_util_error_print(LQ_LQTY,"%s:%d LinkQuality object not found for MAC %s\n",__func__,__LINE__, str);
-        pthread_mutex_unlock(&m_json_lock);
         return;
     }
 
@@ -176,6 +172,12 @@ void qmgr_t::update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, 
         cJSON_AddItemToArray(arr, cJSON_CreateString(get_local_time(tmp, sizeof(tmp), true)));
         trim_cjson_array(arr, MAX_HISTORY);
     }
+}
+
+void qmgr_t::update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm)
+{
+    pthread_mutex_lock(&m_json_lock);
+    update_json_unlocked(str, u_map, out_obj, alarm);
     pthread_mutex_unlock(&m_json_lock);
 }
 
@@ -295,14 +297,23 @@ void qmgr_t::populate_caffinity_client_json(const char *mac_cstr, double score, 
 
 int qmgr_t::push_reporting_subdoc()
 {
-    linkq_t *lq;
-    lq = (linkq_t *)hash_map_get_first(m_link_map);
-    size_t total_links = hash_map_count(m_link_map);  // or precompute
+    // Hold m_json_lock while iterating the map
+    pthread_mutex_lock(&m_json_lock);
+
+    // Count connected clients (those with lq)
+    size_t total_links = 0;
+    for (auto& [mac, wm] : m_wifi_metrics_map) {
+        if (wm && wm->lq) total_links++;
+    }
     report_batch_t *report = (report_batch_t *)calloc(1, sizeof(report_batch_t));
-    if (!report) return -1;
+    if (!report) {
+        pthread_mutex_unlock(&m_json_lock);
+        return -1;
+    }
     report->links = (link_report_t *)calloc(total_links, sizeof(link_report_t));
     if (!report->links) {
         free(report);
+        pthread_mutex_unlock(&m_json_lock);
         return -1;
     }
 
@@ -310,22 +321,24 @@ int qmgr_t::push_reporting_subdoc()
     sample_t *samples = NULL;
     size_t sample_count = 0;
 
-    while (lq != NULL) {
+    for (auto& [mac, wm] : m_wifi_metrics_map) {
+        if (!wm || !wm->lq) continue;
+        linkq_t *lq = wm->lq;
         sample_count = lq->get_window_samples(&samples);
         if (sample_count > 0) {
             link_report_t *lr = &report->links[link_index];
             memset(lr, 0, sizeof(link_report_t));
 
-            strncpy(lr->mac, lq->get_mac_addr(), sizeof(lr->mac) - 1);
+            strncpy(lr->mac, wm->m_mac, sizeof(lr->mac) - 1);
             lr->mac[sizeof(lr->mac) - 1] = '\0';
-            lr->vap_index = lq->get_vap_index();
+            lr->vap_index = wm->m_vap_index;
             lr->threshold = m_args.threshold;
             lr->alarm = lq->get_alarm();
             get_local_time(lr->reporting_time,sizeof(lr->reporting_time),false);
             lr->sample_count = sample_count;
             lr->samples = (sample_t *)calloc(sample_count, sizeof(sample_t));
             for (size_t i = 0; i < sample_count; i++) {
-                lr->samples[i] = samples[i];   // only safe if no pointers
+                lr->samples[i] = samples[i];
             }
 
             free(samples);
@@ -334,9 +347,12 @@ int qmgr_t::push_reporting_subdoc()
             link_index++;
         }
         lq->clear_window_samples();
-        lq = (linkq_t *)hash_map_get_next(m_link_map, lq);
     }
     report->link_count = link_index;
+
+    // Release lock before callback (callback may do arbitrary work)
+    pthread_mutex_unlock(&m_json_lock);
+
     // Call the callback
     qmgr_invoke_batch(report);
     lq_util_dbg_print(LQ_LQTY,"%s:%d Executed callback\n",__func__,__LINE__);
@@ -388,11 +404,10 @@ void qmgr_t::update_graph( cJSON *out_obj)
 }
 int qmgr_t::run()
 {
-    int rc, count = 0;
+    int rc;
     struct timespec time_to_wait;
     struct timeval tm;
     struct timeval start_time;
-    linkq_t *lq;
     lq_score_map_t u_map;
     bool alarm = false;
     bool rapid_disconnect = false;
@@ -416,78 +431,81 @@ int qmgr_t::run()
             elapsed_sec = tm.tv_sec - start_time.tv_sec;
             update_alarm = (elapsed_sec >= m_args.reporting);
 
-            lq = (linkq_t *)hash_map_get_first(m_link_map);
-            lq_util_dbg_print(LQ_LQTY,"%s:%d Processing %d devices in m_link_map\n",
-                __func__,__LINE__, hash_map_count(m_link_map));
+            lq_util_dbg_print(LQ_LQTY,"%s:%d Processing %zu devices in m_wifi_metrics_map\n",
+                __func__,__LINE__, m_wifi_metrics_map.size());
             double lq_sum_sq_iter = 0.0;
             int lq_count_iter = 0;
-            while (lq != NULL) {
-                u_map = lq->run_test(alarm, update_alarm, rapid_disconnect);
-                if (u_map.empty() && !rapid_disconnect) {
-                    lq = (linkq_t *)hash_map_get_next(m_link_map, lq);
-                    continue;
+
+            // Hold m_json_lock for all map iterations (linkq + caffinity)
+            pthread_mutex_lock(&m_json_lock);
+
+            cJSON *conn_arr = cJSON_GetObjectItem(caffinity_out_obj, "ConnectedClients");
+            cJSON *unconn_arr = cJSON_GetObjectItem(caffinity_out_obj, "UnconnectedClients");
+            char time_str[MAX_LINE_SIZE];
+            get_local_time(time_str, sizeof(time_str), true);
+
+            int connected_count = 0;
+            int unconnected_count = 0;
+            double conn_sum_sq_iter = 0.0;
+            double unconn_sum_sq_iter = 0.0;
+            int connected_lq_count = 0;
+
+            for (auto& [mac, wm] : m_wifi_metrics_map) {
+                if (!wm) continue;
+
+                // Process linkq
+                if (wm->lq) {
+                    connected_lq_count++;
+                    u_map = wm->lq->run_test(wm->m_mac, alarm, update_alarm, rapid_disconnect);
+                    if (!u_map.empty() || rapid_disconnect) {
+                        update_json_unlocked(mac.c_str(), u_map, out_obj, alarm);
+
+                        double lq_score = u_map["Score"];
+                        lq_sum_sq_iter += lq_score * lq_score;
+                        lq_count_iter++;
+                    }
                 }
-                update_json(lq->get_mac_addr(), u_map, out_obj, alarm);
 
-                double lq_score = u_map["Score"];
-                lq_sum_sq_iter += lq_score * lq_score;
-                lq_count_iter++;
+                // Process caffinity
+                if (wm->caff) {
+                    caffinity_result_t result = wm->caff->run_algorithm_caffinity(wm->m_mac);
+                    double score = result.score;
 
-                lq = (linkq_t *)hash_map_get_next(m_link_map, lq);
+                    if (result.connected) {
+                        populate_caffinity_client_json(wm->m_mac, score, time_str,
+                                                      conn_arr, unconn_arr, "ConnectedClients");
+                        conn_sum_sq_iter += score * score;
+                        connected_count++;
+                    } else {
+                        populate_caffinity_client_json(wm->m_mac, score, time_str,
+                                                      unconn_arr, conn_arr, "UnconnectedClients");
+                        unconn_sum_sq_iter += score * score;
+                        unconnected_count++;
+                    }
+                }
             }
-            
+
             // Update Link Quality RMS
             if (lq_count_iter > 0) {
                 double rms_lq = sqrt(lq_sum_sq_iter / lq_count_iter);
                 update_rms_json(out_obj, "RMS_lq_score", "Score", rms_lq, NULL, 0.0);
             }
 
-            // Process caffinity in single pass
-            if (!m_caffinity_map.empty()) {
-                pthread_mutex_lock(&m_json_lock);
-                cJSON *conn_arr = cJSON_GetObjectItem(caffinity_out_obj, "ConnectedClients");
-                cJSON *unconn_arr = cJSON_GetObjectItem(caffinity_out_obj, "UnconnectedClients");
-                char time_str[MAX_LINE_SIZE];
-                get_local_time(time_str, sizeof(time_str), true);
-
-                int connected_count = 0;
-                int unconnected_count = 0;
-                double conn_sum_sq_iter = 0.0;
-                double unconn_sum_sq_iter = 0.0;
-
-                std::unordered_map<std::string, caffinity_t*>::iterator caff_it;
-                for (caff_it = m_caffinity_map.begin(); caff_it != m_caffinity_map.end(); ++caff_it) {
-                    caffinity_t *caff = caff_it->second;
-                    if (!caff) continue;
-
-                    caffinity_result_t result = caff->run_algorithm_caffinity();
-                    double score = result.score;
-
-                    if (result.connected) {
-                        populate_caffinity_client_json(result.mac, score, time_str,
-                                                      conn_arr, unconn_arr, "ConnectedClients");
-                        conn_sum_sq_iter += score * score;
-                        connected_count++;
-                    } else {
-                        populate_caffinity_client_json(result.mac, score, time_str,
-                                                      unconn_arr, conn_arr, "UnconnectedClients");
-                        unconn_sum_sq_iter += score * score;
-                        unconnected_count++;
-                    }
-                }
-
+            // Update Caffinity RMS
+            if (connected_count > 0 || unconnected_count > 0) {
                 double rms_connected = (connected_count > 0) ? sqrt(conn_sum_sq_iter / connected_count) : 0.0;
                 double rms_unconnected = (unconnected_count > 0) ? sqrt(unconn_sum_sq_iter / unconnected_count) : 0.0;
                 lq_util_info_print(LQ_LQTY, "%s:%d RMS connected %lf, RMS unconnected %lf\n",
                         __func__, __LINE__, rms_connected, rms_unconnected);
                 update_rms_json(caffinity_out_obj, "RMS_score",
                                 "connected", rms_connected, "unconnected", rms_unconnected);
-
-                pthread_mutex_unlock(&m_json_lock);
             }
+
+            pthread_mutex_unlock(&m_json_lock);
+
             update_caffinity_graph();
-            count = hash_map_count(m_link_map);
-            if (count == 0 ) {
+
+            if (connected_lq_count == 0) {
                 remove(m_args.output_file);
             }
             if (update_alarm) {
@@ -520,14 +538,12 @@ void qmgr_t::deinit()
     pthread_join(m_thread, NULL);
     pthread_cond_destroy(&m_cond);
     
-    // Clean up caffinity map
-    std::unordered_map<std::string, caffinity_t*>::iterator caff_it;
-    for (caff_it = m_caffinity_map.begin(); caff_it != m_caffinity_map.end(); ++caff_it) {
-        delete caff_it->second;
+    // Clean up wifi_metrics map (deletes both lq and caff per entry)
+    for (auto& [mac, wm] : m_wifi_metrics_map) {
+        delete wm;
     }
-    m_caffinity_map.clear();
+    m_wifi_metrics_map.clear();
     
-    hash_map_destroy(m_link_map);
     lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
     return;
 }
@@ -613,7 +629,6 @@ cJSON *qmgr_t::create_caffinity_template(mac_addr_str_t mac_str)
 
 int qmgr_t::reinit(server_arg_t *args)
 {
-    linkq_t *lq = NULL;
     if (args){
         lq_util_info_print(LQ_LQTY," %s:%d sampling=%d args->reporting =%d args->threshold=%f\n"
 	, __func__,__LINE__,args->sampling,args->reporting,args->threshold); 
@@ -623,14 +638,9 @@ int qmgr_t::reinit(server_arg_t *args)
     }
    
     memcpy(&m_args, args, sizeof(server_arg_t));
-    int count = hash_map_count(m_link_map);
-    lq_util_info_print(LQ_LQTY," count=%d\n",count);
-    lq = (linkq_t *)hash_map_get_first(m_link_map);
-    while ((lq != NULL)) {
-        if (count > 0){
-            lq->reinit(args);
-            lq = (linkq_t *)hash_map_get_next(m_link_map, lq);
-            count--;
+    for (auto& [mac, wm] : m_wifi_metrics_map) {
+        if (wm && wm->lq) {
+            wm->lq->reinit(args);
         }
     }
     return 0;
@@ -647,15 +657,8 @@ int qmgr_t::update_affinity_stats(stats_arg_t *arg, bool create_flag)
     pthread_mutex_lock(&m_json_lock);
 
     /* ---------- CHECK MAP FOR EXISTING MAC ---------- */
-    std::unordered_map<const char*, stats_arg_t>::iterator it;
-    bool map_exists = false;
-
-    for (it = m_affinity_map.begin(); it != m_affinity_map.end(); ++it) {
-        if (strcmp(it->first, mac_str) == 0) {
-            map_exists = true;
-            break;
-        }
-    }
+    std::string mac_key(mac_str);
+    bool map_exists = (m_wifi_metrics_map.find(mac_key) != m_wifi_metrics_map.end());
 
     /* ---------- GET / CREATE JSON ROOT ---------- */
     cJSON *affinity_root = cJSON_GetObjectItem(affinity_obj, "AffinityScore");
@@ -741,11 +744,11 @@ bool qmgr_t::is_client_connected(const char *mac_str)
     std::string mac_key(mac_str);
     pthread_mutex_lock(&m_json_lock);
     
-    std::unordered_map<std::string, caffinity_t*>::iterator it = m_caffinity_map.find(mac_key);
+    auto it = m_wifi_metrics_map.find(mac_key);
     bool is_connected = false;
     
-    if (it != m_caffinity_map.end() && it->second) {
-        is_connected = it->second->get_connected();
+    if (it != m_wifi_metrics_map.end() && it->second && it->second->caff) {
+        is_connected = it->second->caff->get_connected();
     }
     
     pthread_mutex_unlock(&m_json_lock);
@@ -794,11 +797,15 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
 
             // remove from Devices JSON
             remove_device_from_out_obj(out_obj, mac_str);
-            // remove from hashmap
-            linkq_t *lq = (linkq_t *)hash_map_get(m_link_map, mac_str);
-            if (lq) {
-                hash_map_remove(m_link_map, mac_str);
-                delete lq;
+
+            // Delete lq only — caff stays alive for disconnected tracking
+            std::string mac_key(mac_str);
+            auto it = m_wifi_metrics_map.find(mac_key);
+            if (it != m_wifi_metrics_map.end()) {
+                wifi_metrics_t *wm = it->second;
+                delete wm->lq;
+                wm->lq = nullptr;
+                lq_util_info_print(LQ_LQTY,"Deleted linkq_t for %s, caff retained\n", mac_str);
             }
         } else {
             lq_util_info_print(LQ_LQTY,"Device %s not found, nothing to delete\n", mac_str);
@@ -808,16 +815,29 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
     }
 
     // ---------- CREATE PATH ----------
+    std::string mac_key(mac_str);
+    auto it = m_wifi_metrics_map.find(mac_key);
+    wifi_metrics_t *wm = nullptr;
+
+    if (it == m_wifi_metrics_map.end()) {
+        wm = new wifi_metrics_t();
+        strncpy(wm->m_mac, mac_str, sizeof(wm->m_mac) - 1);
+        wm->m_mac[sizeof(wm->m_mac) - 1] = '\0';
+        wm->m_vap_index = stats->vap_index;
+        m_wifi_metrics_map[mac_key] = wm;
+    } else {
+        wm = it->second;
+    }
+
     if (!device_exists) {
         lq_util_info_print(LQ_LQTY,"Creating device %s vap_index=%d\n", mac_str, stats->vap_index);
 
-        // Create linkq_t object and add to hashmap
-        linkq_t *lq = new linkq_t(mac_str, stats->vap_index);
-        if (lq) {
-            lq->init(m_args.threshold, m_args.reporting, stats);
-            hash_map_put(m_link_map, strdup(mac_str), lq);
-            lq_util_info_print(LQ_LQTY,"Added linkq_t for %s to m_link_map\n", mac_str);
+        // Create linkq_t if not already present
+        if (!wm->lq) {
+            wm->lq = new linkq_t();
         }
+        wm->lq->init(m_args.threshold, m_args.reporting, stats);
+        lq_util_info_print(LQ_LQTY,"Added linkq_t for %s to m_wifi_metrics_map\n", mac_str);
 
         // Create device JSON template and add to Devices array
         cJSON *dev_template = create_dev_template(mac_str, stats->vap_index);
@@ -826,9 +846,8 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
             mac_str, cJSON_GetArraySize(dev_arr));
     } else {
         // Device exists, update stats
-        linkq_t *lq = (linkq_t *)hash_map_get(m_link_map, mac_str);
-        if (lq) {
-            lq->init(m_args.threshold, m_args.reporting, stats);
+        if (wm->lq) {
+            wm->lq->init(m_args.threshold, m_args.reporting, stats);
             lq_util_dbg_print(LQ_LQTY,"Updated stats for existing device %s\n", mac_str);
         }
     }
@@ -850,9 +869,10 @@ int qmgr_t::rapid_disconnect(stats_arg_t *stats)
     lq_util_info_print(LQ_LQTY,"%s:%d mac_str=%s\n",__func__,__LINE__,mac_str);
 
     pthread_mutex_lock(&m_json_lock);
-    linkq_t *lq = (linkq_t *)hash_map_get(m_link_map, mac_str);
-    if (lq) {
-        lq->rapid_disconnect(stats);   
+    std::string mac_key(mac_str);
+    auto it = m_wifi_metrics_map.find(mac_key);
+    if (it != m_wifi_metrics_map.end() && it->second && it->second->lq) {
+        it->second->lq->rapid_disconnect(stats);
         lq_util_dbg_print(LQ_LQTY,"%s:%d rapid_disconnect called for mac_str=%s\n",__func__,__LINE__,mac_str);
     }
     pthread_mutex_unlock(&m_json_lock);
@@ -878,31 +898,34 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
 #endif
     pthread_mutex_lock(&m_json_lock);
 
-    // Find or create caffinity_t object for this MAC
+    // Find or create wifi_metrics for this MAC
     std::string mac_key(mac_str);
-    std::unordered_map<std::string, caffinity_t*>::iterator it = m_caffinity_map.find(mac_key);
-    caffinity_t *caff = NULL;
+    auto it = m_wifi_metrics_map.find(mac_key);
+    wifi_metrics_t *wm = nullptr;
 
-    if (it == m_caffinity_map.end()) {
-        // Create new caffinity object for this MAC
+    if (it == m_wifi_metrics_map.end()) {
+        // Create new wifi_metrics for this MAC
+        lq_util_info_print(LQ_LQTY, "CAFF qmgr_t %s:%d Creating new wifi_metrics_t for MAC %s\n",
+            __func__, __LINE__, mac_str);
+        wm = new wifi_metrics_t();
+        strncpy(wm->m_mac, mac_str, sizeof(wm->m_mac) - 1);
+        wm->m_mac[sizeof(wm->m_mac) - 1] = '\0';
+        wm->m_vap_index = stats->vap_index;
+        m_wifi_metrics_map[mac_key] = wm;
+    } else {
+        wm = it->second;
+    }
+
+    // Create caffinity_t if not already present
+    if (!wm->caff) {
         lq_util_info_print(LQ_LQTY, "CAFF qmgr_t %s:%d Creating new caffinity_t for MAC %s\n",
             __func__, __LINE__, mac_str);
-        mac_addr_str_t mac_str_array;
-        strncpy(mac_str_array, mac_str, sizeof(mac_str_array) - 1);
-        mac_str_array[sizeof(mac_str_array) - 1] = '\0';
-        caff = new caffinity_t(&mac_str_array);
-        if (caff) {
-            m_caffinity_map[mac_key] = caff;
-            lq_util_dbg_print(LQ_LQTY, "CAFF qmgr_t %s:%d Successfully created caffinity_t for MAC %s\n",
-                __func__, __LINE__, mac_str);
-        }
-    } else {
-        caff = it->second;
+        wm->caff = new caffinity_t();
+        lq_util_dbg_print(LQ_LQTY, "CAFF qmgr_t %s:%d Successfully created caffinity_t for MAC %s\n",
+            __func__, __LINE__, mac_str);
     }
 
-    if (caff) {
-        caff->periodic_stats_update(stats);
-    }
+    wm->caff->periodic_stats_update(stats);
 
     pthread_mutex_unlock(&m_json_lock);
     update_affinity_stats(stats,true);
@@ -992,7 +1015,6 @@ qmgr_t::qmgr_t()
     m_args.reporting = REPORTING_INTERVAL;
     snprintf(m_args.output_file, sizeof(m_args.output_file), "%s", "/www/data/telemetry.json");
     snprintf(m_args.path, sizeof(m_args.path), "%s", "/www/data");
-    m_link_map = hash_map_create();
     out_obj = cJSON_CreateObject();
     affinity_obj = cJSON_CreateObject();
     
@@ -1048,7 +1070,6 @@ qmgr_t::qmgr_t(server_arg_t *args,stats_arg_t *stats)
     m_rms_unconn_count = 0;
     m_rms_lq_sum_sq = 0.0;
     m_rms_lq_count = 0;
-    m_link_map = hash_map_create();
     m_exit = false;
     m_bg_running = false;
     out_obj = cJSON_CreateObject();

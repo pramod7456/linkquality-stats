@@ -22,7 +22,6 @@
 
 #include <pthread.h>
 #include <cjson/cJSON.h>
-#include "collection.h"
 #include "linkq.h"
 #include "run_qmgr.h"
 #include <algorithm>
@@ -33,7 +32,6 @@ using ap_mac_str_t = std::string;
 
 // Result structure returned by run_algorithm_caffinity
 typedef struct {
-    mac_addr_str_t mac;
     double score;
     bool connected;
 } caffinity_result_t;
@@ -52,7 +50,6 @@ typedef enum {
 class caffinity_t
 {
     pthread_mutex_t m_lock;
-    mac_addr_str_t m_mac;
     std::vector<ap_mac_str_t> m_ap_mac;
     unsigned int m_auth_failures;
     unsigned int m_auth_attempts;
@@ -74,12 +71,12 @@ class caffinity_t
     struct timespec  m_sleep_time;
     struct timespec  m_total_time;
 public:
-    caffinity_t(mac_addr_str_t *mac);
+    caffinity_t();
     ~caffinity_t();
     int init(stats_arg_t *stats);  // Returns 0 on success, -1 on error
     int periodic_stats_update(stats_arg_t *stats);  // Updates connected_time, disconnected_time, and SNR
     int score();
-    caffinity_result_t run_algorithm_caffinity();
+    caffinity_result_t run_algorithm_caffinity(const char *mac);
     bool get_connected() const { return m_connected; }
     struct timespec get_disconnected_time() const { 
         return m_disconnected_time; 

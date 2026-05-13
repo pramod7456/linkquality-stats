@@ -159,19 +159,17 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
     return 0;
 }
 
-caffinity_result_t caffinity_t::run_algorithm_caffinity()
+caffinity_result_t caffinity_t::run_algorithm_caffinity(const char *mac)
 {
     caffinity_result_t result;
     double score = 0.0;
     
     // Initialize result
-    strncpy(result.mac, m_mac, sizeof(result.mac) - 1);
-    result.mac[sizeof(result.mac) - 1] = '\0';
     result.score = 0.0;
     result.connected = false;
 
     lq_util_info_print(LQ_CAFF, "caffinity %s:%d Computing caffinity score for MAC %s\n",
-                                __func__, __LINE__, m_mac);
+                                __func__, __LINE__, mac);
 
     pthread_mutex_lock(&m_lock);
 
@@ -179,7 +177,7 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
     if (m_power_save) {
         lq_util_info_print(LQ_CAFF,
             "caffinity %s:%d Skipping score for MAC %s — client in power save mode\n",
-            __func__, __LINE__, m_mac);
+            __func__, __LINE__, mac);
         result.connected = m_connected;
         pthread_mutex_unlock(&m_lock);
         return result;
@@ -188,7 +186,7 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
     result.connected = m_connected;
     
     // Debug dump of all stats for this MAC (one call per line to avoid logging truncation on embedded \n)
-    lq_util_info_print(LQ_CAFF, "caffinity %s:%d [MAC=%s] Stats Dump:\n", __func__, __LINE__, m_mac);
+    lq_util_info_print(LQ_CAFF, "caffinity %s:%d [MAC=%s] Stats Dump:\n", __func__, __LINE__, mac);
     lq_util_info_print(LQ_CAFF,  "caffinity   auth_attempts=%u auth_failures=%u assoc_attempts=%u\n",
         m_auth_attempts, m_auth_failures, m_assoc_attempts);
     lq_util_info_print(LQ_CAFF, "caffinity   assoc_failures=%u dhcp: discover=%u offer=%u request=%u decline=%u ack=%u nak=%u\n",
@@ -218,7 +216,7 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
 
         lq_util_info_print(LQ_CAFF,
             "stats_dump CAFF_CONNECTED_RAW MAC=%s connected_sec=%.4f disconnected_sec=%.4f sleep_sec=%.4f total=%.4f\n",
-            m_mac, connected_sec, disconnected_sec, sleep_sec, total);
+            mac, connected_sec, disconnected_sec, sleep_sec, total);
 
         if (total <= 0.0) {
             lq_util_info_print(LQ_CAFF,
@@ -324,7 +322,7 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
         "dhcp_disc=%u dhcp_offer=%u dhcp_req=%u dhcp_ack=%u dhcp_nak=%u dhcp_decline=%u "
         "dhcp_att=%u dhcp_fail=%u dhcp_fail_rate=%.4f "
         "failure_ratio=%.4f snr_norm=%.4f snr_sq=%.4f exponent=%.4f sigmoid=%.4f\n",
-        m_mac,
+        mac,
         cli_snr, channel_utilization,
         m_auth_attempts, m_auth_failures, auth_failure_rate,
         m_assoc_attempts, m_assoc_failures, assoc_failure_rate,
@@ -336,16 +334,14 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity()
     score = (1.0 - failure_ratio) * snr_squared * sigmoid_factor;
 
     lq_util_dbg_print(LQ_CAFF, "caffinity %s:%d FINAL SCORE=%.4f for MAC %s connected %d\n",
-                               __func__, __LINE__, score, m_mac, m_connected);
+                               __func__, __LINE__, score, mac, m_connected);
     
     result.score = score ;
     return result;
 }
 
-caffinity_t::caffinity_t(mac_addr_str_t *mac)
+caffinity_t::caffinity_t()
 {
-    strncpy(m_mac, *mac, sizeof(m_mac) - 1);
-    m_mac[sizeof(m_mac) - 1] = '\0';
     pthread_mutex_init(&m_lock, NULL);
     m_auth_failures = 0;
     m_auth_attempts = 0;

@@ -21,7 +21,6 @@
 
 #include <pthread.h>
 #include <cjson/cJSON.h>
-//#include "collection.h"
 #include "run_qmgr.h"
 #include <vector>
 #include <algorithm>
@@ -38,6 +37,26 @@
 /* DHCP event flag for affinity updates */
 #define DHCP_EVENT_UPDATE    1
 
+typedef struct wifi_metrics {
+    mac_addr_str_t m_mac;
+    unsigned int m_vap_index;
+    linkq_t *lq;
+    caffinity_t *caff;
+
+    wifi_metrics() : m_vap_index(0), lq(nullptr), caff(nullptr) {
+        memset(m_mac, 0, sizeof(m_mac));
+    }
+    ~wifi_metrics() {
+        delete lq;
+        delete caff;
+    }
+    // Non-copyable, non-movable (contains pthread_mutex_t members via lq/caff)
+    wifi_metrics(const wifi_metrics&) = delete;
+    wifi_metrics& operator=(const wifi_metrics&) = delete;
+    wifi_metrics(wifi_metrics&&) = delete;
+    wifi_metrics& operator=(wifi_metrics&&) = delete;
+} wifi_metrics_t;
+
 class ipc_recv_t;
 class qmgr_t {
     pthread_mutex_t m_lock;
@@ -45,7 +64,7 @@ class qmgr_t {
     server_arg_t    m_args;
     pthread_mutex_t m_json_lock;
     stats_arg_t    m_stats;
-    hash_map_t *m_link_map;
+    std::unordered_map<std::string, wifi_metrics_t*> m_wifi_metrics_map;
     static qmgr_t *instance;
     qmgr_t();
     qmgr_t(server_arg_t *args,stats_arg_t *stats);
@@ -58,8 +77,6 @@ class qmgr_t {
     cJSON *out_obj;
     cJSON *affinity_obj;
     cJSON *caffinity_out_obj;  // Separate JSON for caffinity telemetry
-    std::unordered_map<const char*, stats_arg_t> m_affinity_map;
-    std::unordered_map<std::string, caffinity_t*> m_caffinity_map;  // Object storage for caffinity
     
     // RMS aggregate tracking
     double m_rms_conn_sum_sq;
@@ -93,6 +110,7 @@ public:
     cJSON *create_dev_template(mac_addr_str_t mac_str,unsigned int vap_index);
     static int set_max_snr_radios(radio_max_snr_t *max_snr_val);    
     void update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm);
+    void update_json_unlocked(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm);
     void update_caffinity_graph();
     void update_rms_json(cJSON *root, const char *obj_key,
                          const char *key1, double val1,

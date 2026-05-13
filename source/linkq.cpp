@@ -83,7 +83,7 @@ static inline double apply_rapid_reconnect(double norm,int remaining,
     return val;
 }
 
-lq_score_map_t linkq_t::run_algorithm(linkq_data_t data,
+lq_score_map_t linkq_t::run_algorithm(const char *mac, linkq_data_t data,
                                 bool &alarm,
                                 bool update_alarm,int channel_utilization)
 {
@@ -94,7 +94,6 @@ lq_score_map_t linkq_t::run_algorithm(linkq_data_t data,
     double x, y;
     bool is_ignite_station = false;
     memset(&m_data_sample,0,sizeof(sample_t));
-    const char *mac = get_mac_addr();
     if(strncmp(ignite_station_mac, mac, sizeof(ignite_station_mac)) == 0)
     {
         lq_util_dbg_print(LQ_LQTY,"%s:%d mac=%s and ignite_station_mac=%s\n",
@@ -340,7 +339,7 @@ lq_score_map_t linkq_t::run_algorithm(linkq_data_t data,
     }
     return u_map;
 }
-lq_score_map_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_disconnect)
+lq_score_map_t linkq_t::run_test(const char *mac, bool &alarm, bool update_alarm, bool &rapid_disconnect)
 {
     lq_score_map_t u_map;
     linkq_data_t data;
@@ -395,7 +394,7 @@ lq_score_map_t linkq_t::run_test(bool &alarm, bool update_alarm, bool &rapid_dis
         }
     }
 
-    u_map = run_algorithm(data, alarm, update_alarm,stat.channel_utilization);
+    u_map = run_algorithm(mac, data, alarm, update_alarm,stat.channel_utilization);
 
     // One recovery step per successful sample
     if (m_recovery_remaining > 0) {
@@ -660,14 +659,10 @@ int linkq_t::set_max_snr_radios(radio_max_snr_t *max_snr_val)
     return 0;
 }
 
-linkq_t::linkq_t(mac_addr_str_t mac,unsigned int vap_index)
+linkq_t::linkq_t()
 {
-    strncpy(m_mac, mac, sizeof(m_mac) - 1);
-    m_mac[sizeof(m_mac) - 1] = '\0';
-    m_vapindex = vap_index;
     pthread_mutex_init(&m_vec_lock, NULL);
     pthread_mutex_init(&m_deque_lock, NULL);
-    lq_util_error_print(LQ_LQTY," %s:%d m_vapindex =%d\n",__func__,__LINE__,m_vapindex); 
     m_recs = 0;
     m_alarm = false;
     m_current = 0;
