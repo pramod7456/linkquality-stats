@@ -67,6 +67,7 @@ static void *receiver_thread(void *arg);
  * Sets exit flag, shuts down socket, joins thread, unlinks socket file.
  */
 void ipc_receiver_stop(void);
+void init(qmgr_t *qmgr);
 ipc_recv_t();
 ~ipc_recv_t();
 

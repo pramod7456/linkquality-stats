@@ -926,14 +926,24 @@ void qmgr_t::start_background_run()
 {
     lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
     if (m_bg_running) {
-        return;   // already running
+        return;
     }
     m_bg_running = true;
+
+    /* Create and start IPC receiver here (not in constructor) to avoid
+     * deadlock: constructor runs inside get_instance() which holds a mutex,
+     * and ipc_recv_t::init() must NOT re-enter get_instance(). */
+    if (!m_ipc) {
+        m_ipc = new ipc_recv_t();
+        m_ipc->init(this);
+    }
+
     int ret = pthread_create(&m_thread, NULL, run_helper, this);
     if (ret != 0) {
-        lq_util_info_print(LQ_LQTY,"Failed to create background run thread\n");
+        lq_util_error_print(LQ_LQTY,"%s:%d failed to create background thread: %s\n",
+                           __func__,__LINE__, strerror(ret));
     } else {
-        lq_util_info_print(LQ_LQTY,"created background run thread\n");
+        lq_util_info_print(LQ_LQTY,"%s:%d background thread created\n",__func__,__LINE__);
     }
     return;
 }
@@ -1005,12 +1015,13 @@ qmgr_t::qmgr_t()
     m_rms_unconn_count = 0;
     m_rms_lq_sum_sq = 0.0;
     m_rms_lq_count = 0;
-   m_ipc = new ipc_recv_t(); 
+    m_ipc = NULL;
     m_bg_running = false;
     m_exit = false;
     pthread_mutex_init(&m_json_lock, NULL);
     pthread_mutex_init(&m_lock, NULL);
     pthread_cond_init(&m_cond, NULL);
+    lq_util_error_print(LQ_LQTY, "[STARTUP] %s:%d constructor done\n", __func__, __LINE__);
 }
 
 qmgr_t::qmgr_t(server_arg_t *args,stats_arg_t *stats)

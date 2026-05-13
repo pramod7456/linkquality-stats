@@ -244,16 +244,15 @@ int main(int argc, char *argv[])
         qmgr->start_background_run();
         lq_util_info_print(LQ_LQTY, "%s:%d link metrics started\n", __func__, __LINE__);
     }
-    /* Event-driven: rbus dispatches callbacks on its own threads.
-     * lq_loop() keeps the daemon alive with periodic + on-demand wakeups. */
-    lq_loop();
-
-
 
     /* Signal parent: init done, parent (systemd) can exit cleanly */
     sem_post(g_sem);
     sem_close(g_sem);
     g_sem = SEM_FAILED;
+
+    /* Event-driven: rbus dispatches callbacks on its own threads.
+     * lq_loop() keeps the daemon alive with periodic + on-demand wakeups. */
+    lq_loop();
 
     lq_util_info_print(LQ_LQTY, "%s:%d shutting down linkquality_stats\n",
                        __func__, __LINE__);

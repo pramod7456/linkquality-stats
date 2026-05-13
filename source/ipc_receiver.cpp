@@ -360,12 +360,15 @@ void ipc_recv_t::ipc_receiver_stop(void)
 
 ipc_recv_t::ipc_recv_t()
 {
-    lq_util_info_print(LQ_LQTY,"%s:%d\n",__func__,__LINE__);
-    m_qmgr = qmgr_t::get_instance();
+    m_qmgr = NULL;
     m_sock = -1;
-    m_exit = -1;
-    ipc_receiver_start();
+    m_exit = 0;
+}
 
+void ipc_recv_t::init(qmgr_t *qmgr)
+{
+    m_qmgr = qmgr;
+    ipc_receiver_start();
 }
 
 ipc_recv_t::~ipc_recv_t()
