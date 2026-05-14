@@ -67,7 +67,9 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
         case wifi_event_hal_deauth_frame:
             m_connected = false;
             m_auth_failures++;
-            m_disconnected_time = arg->total_disconnected_time;
+            if (!m_current_bssid.empty()) {
+                m_bssid_map[m_current_bssid].disconnected_time = arg->total_disconnected_time;
+            }
             break;
 
         case wifi_event_hal_assoc_req_frame:
@@ -85,19 +87,20 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
                         __func__, __LINE__, arg->status_code, m_assoc_failures);
             } else {
                 m_connected = true;
-                m_connected_time = arg->total_connected_time;
+                m_current_bssid = arg->ap_mac_str;
+                m_bssid_map[m_current_bssid].connected_time = arg->total_connected_time;
                 lq_util_info_print(LQ_CAFF, "caffinity CAFF %s:%d ASSOC/REASSOC response SUCCESS (status=%u), "
-                            "m_connected=true, connected_time=%ld.%09ld\n", __func__, __LINE__, arg->status_code,
-                            (long)m_connected_time.tv_sec, m_connected_time.tv_nsec);
+                            "m_connected=true, bssid=%s, connected_time=%ld.%09ld\n", __func__, __LINE__, arg->status_code,
+                            m_current_bssid.c_str(),
+                            (long)m_bssid_map[m_current_bssid].connected_time.tv_sec,
+                            m_bssid_map[m_current_bssid].connected_time.tv_nsec);
 
-                // To store AP mac map
-                if (std::find(m_ap_mac.begin(), m_ap_mac.end(), arg->ap_mac_str) == m_ap_mac.end()) {
-                    m_ap_mac.push_back(arg->ap_mac_str);
-                }
-
-                // Printing stored AP macs, Need to remove after testing.
-                for (size_t i = 0; i < m_ap_mac.size(); ++i) {
-                    lq_util_info_print(LQ_CAFF, "%s:%d: %d: AP MAC %s\n", __func__, __LINE__, i, m_ap_mac[i].c_str());
+                // Log all tracked BSSIDs
+                for (auto it = m_bssid_map.begin(); it != m_bssid_map.end(); ++it) {
+                    lq_util_info_print(LQ_CAFF, "%s:%d: BSSID %s conn=%ld.%09ld disc=%ld.%09ld\n",
+                        __func__, __LINE__, it->first.c_str(),
+                        (long)it->second.connected_time.tv_sec, it->second.connected_time.tv_nsec,
+                        (long)it->second.disconnected_time.tv_sec, it->second.disconnected_time.tv_nsec);
                 }
             }
             break;
@@ -109,9 +112,12 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
 
         case wifi_event_hal_disassoc_device:
             m_connected = false;
-            m_disconnected_time = arg->total_disconnected_time;
-            lq_util_info_print(LQ_CAFF, "caffinity CAFF %s:%d DISASSOC device, m_connected=false, disconnected_time=%ld.%09ld\n",
-                                        __func__, __LINE__, (long)m_disconnected_time.tv_sec, m_disconnected_time.tv_nsec);
+            if (!m_current_bssid.empty()) {
+                m_bssid_map[m_current_bssid].disconnected_time = arg->total_disconnected_time;
+                lq_util_info_print(LQ_CAFF, "caffinity CAFF %s:%d DISASSOC device, m_connected=false, bssid=%s, disconnected_time=%ld.%09ld\n",
+                                            __func__, __LINE__, m_current_bssid.c_str(),
+                                            (long)arg->total_disconnected_time.tv_sec, arg->total_disconnected_time.tv_nsec);
+            }
             break;
 
         default:
@@ -120,11 +126,11 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
             break;
         }
 
-        // Update m_connected_time from total_connected_time
-        m_connected_time = arg->total_connected_time;
-
-        // Update m_disconnected_time from total_disconnected_time
-        m_disconnected_time = arg->total_disconnected_time;
+        // Update timers on the current BSSID entry
+        if (!m_current_bssid.empty()) {
+            m_bssid_map[m_current_bssid].connected_time = arg->total_connected_time;
+            m_bssid_map[m_current_bssid].disconnected_time = arg->total_disconnected_time;
+        }
 
         // Update cli_SNR only if client is connected to avoid overwriting valid SNR with 0
         if (m_connected) {
@@ -151,11 +157,17 @@ int caffinity_t::periodic_stats_update(stats_arg_t *arg)
     lq_util_info_print(LQ_CAFF, "caffinity stats %s:%d Updated stats for event=%d: auth_attempts=%u auth_failures=%u"
                                 "assoc_attempts=%u assoc_failures=%u\n", __func__, __LINE__, arg->event,
                                 m_auth_attempts, m_auth_failures, m_assoc_attempts, m_assoc_failures);
-    lq_util_info_print(LQ_CAFF, "caffinity stats %s:%d Updated periodic stats for MAC %s: "
-                          "connected_time=%ld.%09ld disconnected_time=%ld.%09ld cli_SNR=%d channel_utilization=%d\n",
-                          __func__, __LINE__, arg->mac_str, (long)m_connected_time.tv_sec, m_connected_time.tv_nsec,
-                          (long)m_disconnected_time.tv_sec, m_disconnected_time.tv_nsec,
-                          m_cli_snr, m_channel_utilization);
+    if (!m_current_bssid.empty()) {
+        auto it = m_bssid_map.find(m_current_bssid);
+        if (it != m_bssid_map.end()) {
+            lq_util_info_print(LQ_CAFF, "caffinity stats %s:%d Updated periodic stats for MAC %s bssid=%s: "
+                              "connected_time=%ld.%09ld disconnected_time=%ld.%09ld cli_SNR=%d channel_utilization=%d\n",
+                              __func__, __LINE__, arg->mac_str, m_current_bssid.c_str(),
+                              (long)it->second.connected_time.tv_sec, it->second.connected_time.tv_nsec,
+                              (long)it->second.disconnected_time.tv_sec, it->second.disconnected_time.tv_nsec,
+                              m_cli_snr, m_channel_utilization);
+        }
+    }
     return 0;
 }
 
@@ -191,10 +203,14 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity(const char *mac)
         m_auth_attempts, m_auth_failures, m_assoc_attempts);
     lq_util_info_print(LQ_CAFF, "caffinity   assoc_failures=%u dhcp: discover=%u offer=%u request=%u decline=%u ack=%u nak=%u\n",
         m_assoc_failures, m_discover, m_offer, m_request, m_decline, m_ack, m_nak);
-    lq_util_info_print(LQ_CAFF, "caffinity   connected_time=%ld.%09ld disconnected_time=%ld.%09ld sleep_time=%ld.%09ld\n",
-        (long)m_connected_time.tv_sec, (long)m_connected_time.tv_nsec,
-        (long)m_disconnected_time.tv_sec, (long)m_disconnected_time.tv_nsec,
-        (long)m_sleep_time.tv_sec, (long)m_sleep_time.tv_nsec);
+    // Dump per-BSSID timers
+    for (auto it = m_bssid_map.begin(); it != m_bssid_map.end(); ++it) {
+        lq_util_info_print(LQ_CAFF, "caffinity   bssid=%s conn=%ld.%09ld disc=%ld.%09ld sleep=%ld.%09ld\n",
+            it->first.c_str(),
+            (long)it->second.connected_time.tv_sec, it->second.connected_time.tv_nsec,
+            (long)it->second.disconnected_time.tv_sec, it->second.disconnected_time.tv_nsec,
+            (long)it->second.sleep_time.tv_sec, it->second.sleep_time.tv_nsec);
+    }
     lq_util_info_print(LQ_CAFF, "caffinity   total_time=%ld.%09ld connected=%d\n",
         (long)m_total_time.tv_sec, (long)m_total_time.tv_nsec, m_connected);
 
@@ -203,20 +219,21 @@ caffinity_result_t caffinity_t::run_algorithm_caffinity(const char *mac)
     /* score = connected_time / (connected_time + disconnected_time + sleep_time) */
     /* ------------------------------------------------------------------ */
     if (m_connected) {
-        double connected_sec    = (double)m_connected_time.tv_sec
-                                  + (double)m_connected_time.tv_nsec / 1e9;
-        double disconnected_sec = (double)m_disconnected_time.tv_sec
-                                  + (double)m_disconnected_time.tv_nsec / 1e9;
-        static thread_local unsigned int seed = (unsigned int)time(nullptr);
-        double sleep_sec = 0;
+        bssid_timers_t avg = aggregate_bssid_timers();
+        double connected_sec    = (double)avg.connected_time.tv_sec
+                                  + (double)avg.connected_time.tv_nsec / 1e9;
+        double disconnected_sec = (double)avg.disconnected_time.tv_sec
+                                  + (double)avg.disconnected_time.tv_nsec / 1e9;
+        double sleep_sec        = (double)avg.sleep_time.tv_sec
+                                  + (double)avg.sleep_time.tv_nsec / 1e9;
 
         pthread_mutex_unlock(&m_lock);
         
         double total = connected_sec + disconnected_sec + sleep_sec;
 
         lq_util_info_print(LQ_CAFF,
-            "stats_dump CAFF_CONNECTED_RAW MAC=%s connected_sec=%.4f disconnected_sec=%.4f sleep_sec=%.4f total=%.4f\n",
-            mac, connected_sec, disconnected_sec, sleep_sec, total);
+            "stats_dump CAFF_CONNECTED_RAW MAC=%s bssid_count=%zu connected_sec=%.4f disconnected_sec=%.4f sleep_sec=%.4f total=%.4f\n",
+            mac, m_bssid_map.size(), connected_sec, disconnected_sec, sleep_sec, total);
 
         if (total <= 0.0) {
             lq_util_info_print(LQ_CAFF,
@@ -357,9 +374,6 @@ caffinity_t::caffinity_t()
     m_cli_snr = 0;
     m_channel_utilization = 0;
     m_power_save = false;
-    memset(&m_disconnected_time, 0, sizeof(m_disconnected_time));
-    memset(&m_connected_time, 0, sizeof(m_connected_time));
-    memset(&m_sleep_time, 0, sizeof(m_sleep_time));
     memset(&m_total_time, 0, sizeof(m_total_time));
     m_connected =  false;
 
@@ -368,4 +382,53 @@ caffinity_t::caffinity_t()
 caffinity_t::~caffinity_t()
 {
    pthread_mutex_destroy(&m_lock);
+}
+
+bssid_timers_t caffinity_t::aggregate_bssid_timers() const
+{
+    bssid_timers_t avg = {};
+    memset(&avg, 0, sizeof(avg));
+
+    size_t count = m_bssid_map.size();
+    if (count == 0) {
+        return avg;
+    }
+
+    long long sum_conn_sec = 0, sum_conn_nsec = 0;
+    long long sum_disc_sec = 0, sum_disc_nsec = 0;
+    long long sum_sleep_sec = 0, sum_sleep_nsec = 0;
+
+    for (auto it = m_bssid_map.begin(); it != m_bssid_map.end(); ++it) {
+        sum_conn_sec   += it->second.connected_time.tv_sec;
+        sum_conn_nsec  += it->second.connected_time.tv_nsec;
+        sum_disc_sec   += it->second.disconnected_time.tv_sec;
+        sum_disc_nsec  += it->second.disconnected_time.tv_nsec;
+        sum_sleep_sec  += it->second.sleep_time.tv_sec;
+        sum_sleep_nsec += it->second.sleep_time.tv_nsec;
+    }
+
+    // Normalize nanosecond overflow into seconds before averaging
+    sum_conn_sec  += sum_conn_nsec / 1000000000LL;
+    sum_conn_nsec  = sum_conn_nsec % 1000000000LL;
+    sum_disc_sec  += sum_disc_nsec / 1000000000LL;
+    sum_disc_nsec  = sum_disc_nsec % 1000000000LL;
+    sum_sleep_sec += sum_sleep_nsec / 1000000000LL;
+    sum_sleep_nsec = sum_sleep_nsec % 1000000000LL;
+
+    long long n = (long long)count;
+    avg.connected_time.tv_sec     = (time_t)(sum_conn_sec / n);
+    avg.connected_time.tv_nsec    = (long)((sum_conn_nsec + (sum_conn_sec % n) * 1000000000LL) / n);
+    avg.disconnected_time.tv_sec  = (time_t)(sum_disc_sec / n);
+    avg.disconnected_time.tv_nsec = (long)((sum_disc_nsec + (sum_disc_sec % n) * 1000000000LL) / n);
+    avg.sleep_time.tv_sec         = (time_t)(sum_sleep_sec / n);
+    avg.sleep_time.tv_nsec        = (long)((sum_sleep_nsec + (sum_sleep_sec % n) * 1000000000LL) / n);
+
+    lq_util_info_print(LQ_CAFF, "caffinity %s:%d aggregate_bssid_timers: count=%zu "
+        "avg_conn=%ld.%09ld avg_disc=%ld.%09ld avg_sleep=%ld.%09ld\n",
+        __func__, __LINE__, count,
+        (long)avg.connected_time.tv_sec, avg.connected_time.tv_nsec,
+        (long)avg.disconnected_time.tv_sec, avg.disconnected_time.tv_nsec,
+        (long)avg.sleep_time.tv_sec, avg.sleep_time.tv_nsec);
+
+    return avg;
 }

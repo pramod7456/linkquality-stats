@@ -38,13 +38,12 @@
 #define DHCP_EVENT_UPDATE    1
 
 typedef struct wifi_metrics {
-    mac_addr_str_t m_mac;
+    std::string m_mac;
     unsigned int m_vap_index;
     linkq_t *lq;
     caffinity_t *caff;
 
     wifi_metrics() : m_vap_index(0), lq(nullptr), caff(nullptr) {
-        memset(m_mac, 0, sizeof(m_mac));
     }
     ~wifi_metrics() {
         delete lq;
@@ -89,8 +88,8 @@ class qmgr_t {
     double m_rms_lq_sum_sq;
     int m_rms_lq_count;
 
-    cJSON* create_affinity_template(mac_addr_str_t mac_str,unsigned int vap_index);
-    cJSON* create_caffinity_template(mac_addr_str_t mac_str);
+    cJSON* create_affinity_template(const std::string &mac_str,unsigned int vap_index);
+    cJSON* create_caffinity_template(const std::string &mac_str);
     void populate_caffinity_client_json(const char *mac_cstr, double score, const char *timestamp,
                                         cJSON *target_arr, cJSON *other_arr, const char *target_name);
 public:
@@ -99,7 +98,7 @@ public:
     int reinit(server_arg_t *arg);
     void deinit();
     void trim_cjson_array(cJSON *arr, int max_len);
-    void deinit(mac_addr_str_t mac_str);
+    void deinit(const std::string &mac_str);
     int run();
     int push_reporting_subdoc();
     void start_background_run();
@@ -107,7 +106,7 @@ public:
     void remove_device_from_out_obj(cJSON *out_obj, const char *mac_str);
     static qmgr_t* get_instance();
     char *get_local_time(char *buff, unsigned int len,bool flag);
-    cJSON *create_dev_template(mac_addr_str_t mac_str,unsigned int vap_index);
+    cJSON *create_dev_template(const std::string &mac_str,unsigned int vap_index);
     static int set_max_snr_radios(radio_max_snr_t *max_snr_val);    
     void update_json(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm);
     void update_json_unlocked(const char *str, lq_score_map_t u_map, cJSON *out_obj, bool &alarm);

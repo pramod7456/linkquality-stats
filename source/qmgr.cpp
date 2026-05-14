@@ -270,9 +270,7 @@ void qmgr_t::populate_caffinity_client_json(const char *mac_cstr, double score, 
 
     // Create new if not found anywhere
     if (!dev_obj && target_arr) {
-        mac_addr_str_t mac_copy;
-        strncpy(mac_copy, mac_cstr, sizeof(mac_copy) - 1);
-        mac_copy[sizeof(mac_copy) - 1] = '\0';
+        std::string mac_copy(mac_cstr);
         dev_obj = create_caffinity_template(mac_copy);
         cJSON_AddItemToArray(target_arr, dev_obj);
     }
@@ -330,7 +328,7 @@ int qmgr_t::push_reporting_subdoc()
             link_report_t *lr = &report->links[link_index];
             memset(lr, 0, sizeof(link_report_t));
 
-            strncpy(lr->mac, wm->m_mac, sizeof(lr->mac) - 1);
+            strncpy(lr->mac, wm->m_mac.c_str(), sizeof(lr->mac) - 1);
             lr->mac[sizeof(lr->mac) - 1] = '\0';
             lr->vap_index = wm->m_vap_index;
             lr->threshold = m_args.threshold;
@@ -461,7 +459,7 @@ int qmgr_t::run()
                 // Process linkq (connected clients only)
                 if (wm->lq) {
                     connected_lq_count++;
-                    u_map = wm->lq->run_test(wm->m_mac, alarm, update_alarm, rapid_disconnect);
+                    u_map = wm->lq->run_test(wm->m_mac.c_str(), alarm, update_alarm, rapid_disconnect);
                     if (!u_map.empty() || rapid_disconnect) {
                         update_json_unlocked(mac.c_str(), u_map, out_obj, alarm);
 
@@ -471,7 +469,7 @@ int qmgr_t::run()
 
                         // Collect per-station metric for T2 telemetry
                         char t2_buf[256];
-                        snprintf(t2_buf, sizeof(t2_buf), "mac=%s,score=%.2f", wm->m_mac, lq_score);
+                        snprintf(t2_buf, sizeof(t2_buf), "mac=%s,score=%.2f", wm->m_mac.c_str(), lq_score);
                         t2_station_metrics.emplace_back(t2_buf);
                         t2_lq_sum += lq_score;
                     }
@@ -479,17 +477,17 @@ int qmgr_t::run()
 
                 // Process caffinity (connected + disconnected clients)
                 if (wm->caff) {
-                    caffinity_result_t result = wm->caff->run_algorithm_caffinity(wm->m_mac);
+                    caffinity_result_t result = wm->caff->run_algorithm_caffinity(wm->m_mac.c_str());
                     double score = result.score;
 
                     if (result.connected) {
-                        populate_caffinity_client_json(wm->m_mac, score, time_str,
+                        populate_caffinity_client_json(wm->m_mac.c_str(), score, time_str,
                                                       conn_arr, unconn_arr, "ConnectedClients");
                         conn_sum_sq_iter += score * score;
                         connected_count++;
                         t2_caff_conn_sum += score;
                     } else {
-                        populate_caffinity_client_json(wm->m_mac, score, time_str,
+                        populate_caffinity_client_json(wm->m_mac.c_str(), score, time_str,
                                                       unconn_arr, conn_arr, "UnconnectedClients");
                         unconn_sum_sq_iter += score * score;
                         unconnected_count++;
@@ -570,13 +568,13 @@ void qmgr_t::deinit()
     return;
 }
 
-void qmgr_t::deinit(mac_addr_str_t mac_str)
+void qmgr_t::deinit(const std::string &mac_str)
 {
     lq_util_info_print(LQ_LQTY," %s:%d\n",__func__,__LINE__);
     return;
 }
 
-cJSON *qmgr_t::create_dev_template(mac_addr_str_t mac_str,unsigned int vap_index)
+cJSON *qmgr_t::create_dev_template(const std::string &mac_str,unsigned int vap_index)
 {
     cJSON *obj, *lq_obj;
     char tmp[MAX_LINE_SIZE];
@@ -586,7 +584,7 @@ cJSON *qmgr_t::create_dev_template(mac_addr_str_t mac_str,unsigned int vap_index
     obj = cJSON_CreateObject();
     
     snprintf(tmp, sizeof(tmp), "MAC");
-    cJSON_AddItemToObject(obj, tmp, cJSON_CreateString(mac_str));
+    cJSON_AddItemToObject(obj, tmp, cJSON_CreateString(mac_str.c_str()));
     
     snprintf(tmp, sizeof(tmp), "VapIndex");
     cJSON_AddItemToObject(obj, tmp, cJSON_CreateNumber(vap_index));
@@ -613,12 +611,12 @@ cJSON *qmgr_t::create_dev_template(mac_addr_str_t mac_str,unsigned int vap_index
     return obj;
 }
 
-cJSON *qmgr_t::create_caffinity_template(mac_addr_str_t mac_str)
+cJSON *qmgr_t::create_caffinity_template(const std::string &mac_str)
 {
     cJSON *obj, *caff_obj;
     
     obj = cJSON_CreateObject();
-    cJSON_AddStringToObject(obj, "MAC", mac_str);
+    cJSON_AddStringToObject(obj, "MAC", mac_str.c_str());
     
     caff_obj = cJSON_CreateObject();
     cJSON_AddItemToObject(obj, "CAffinityScore", caff_obj);
@@ -670,11 +668,9 @@ int qmgr_t::reinit(server_arg_t *args)
 int qmgr_t::update_affinity_stats(stats_arg_t *arg, bool create_flag)
 {
     lq_util_info_print(LQ_LQTY,"CAFF qmgr_t %s:%d event=%d create_flag=%d\n",__func__,__LINE__, arg->event, create_flag);
-    mac_addr_str_t mac_str;
-    strncpy(mac_str, arg->mac_str, sizeof(mac_str) - 1);
-    mac_str[sizeof(mac_str) - 1] = '\0';
+    std::string mac_str(arg->mac_str);
     
-    lq_util_info_print(LQ_LQTY, "CAFF qmgr_t %s:%d Processing MAC %s\n", __func__, __LINE__, mac_str);
+    lq_util_info_print(LQ_LQTY, "CAFF qmgr_t %s:%d Processing MAC %s\n", __func__, __LINE__, mac_str.c_str());
 
     pthread_mutex_lock(&m_json_lock);
 
@@ -711,7 +707,7 @@ int qmgr_t::update_affinity_stats(stats_arg_t *arg, bool create_flag)
                 const char *existing_mac =
                     cJSON_GetStringValue(cJSON_GetObjectItem(dev, "MAC"));
 
-                if (existing_mac && strcmp(existing_mac, mac_str) == 0) {
+                if (existing_mac && strcmp(existing_mac, mac_str.c_str()) == 0) {
                     cJSON_DeleteItemFromArray(connected_arr, i);
                     break;
                 }
@@ -724,7 +720,7 @@ int qmgr_t::update_affinity_stats(stats_arg_t *arg, bool create_flag)
                 const char *existing_mac =
                     cJSON_GetStringValue(cJSON_GetObjectItem(dev, "MAC"));
 
-                if (existing_mac && strcmp(existing_mac, mac_str) == 0) {
+                if (existing_mac && strcmp(existing_mac, mac_str.c_str()) == 0) {
                     cJSON_DeleteItemFromArray(unconnected_arr, i);
                     break;
                 }
@@ -732,7 +728,7 @@ int qmgr_t::update_affinity_stats(stats_arg_t *arg, bool create_flag)
         }
 
         lq_util_info_print(LQ_LQTY,
-            "Removed client %s from affinity stats\n", mac_str);
+            "Removed client %s from affinity stats\n", mac_str.c_str());
 
         pthread_mutex_unlock(&m_json_lock);
         return 0;
@@ -749,7 +745,7 @@ int qmgr_t::update_affinity_stats(stats_arg_t *arg, bool create_flag)
 
 
         lq_util_info_print(LQ_LQTY,
-            "Added client %s to Connected_client\n", mac_str);
+            "Added client %s to Connected_client\n", mac_str.c_str());
     }
 
 
@@ -787,10 +783,7 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
 {
     char tmp[MAX_FILE_NAME_SZ];
     cJSON *dev_arr;
-    mac_addr_str_t mac_str;
-
-    strncpy(mac_str, stats->mac_str, sizeof(mac_str) - 1);
-    mac_str[sizeof(mac_str) - 1] = '\0';
+    std::string mac_str(stats->mac_str);
 
     snprintf(tmp, sizeof(tmp), "Devices");
     pthread_mutex_lock(&m_json_lock);
@@ -806,7 +799,7 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
         cJSON *dev = cJSON_GetArrayItem(dev_arr, i);
         const char *existing_mac =
             cJSON_GetStringValue(cJSON_GetObjectItem(dev, "MAC"));
-        if (existing_mac && strcmp(existing_mac, mac_str) == 0) {
+        if (existing_mac && strcmp(existing_mac, mac_str.c_str()) == 0) {
             device_exists = true;
             break;
         }
@@ -815,10 +808,10 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
     // ---------- DELETE PATH ----------
     if (!create_flag) {
         if (device_exists) {
-            lq_util_info_print(LQ_LQTY,"Removing device %s\n", mac_str);
+            lq_util_info_print(LQ_LQTY,"Removing device %s\n", mac_str.c_str());
 
             // remove from Devices JSON
-            remove_device_from_out_obj(out_obj, mac_str);
+            remove_device_from_out_obj(out_obj, mac_str.c_str());
 
             // Delete lq only — caff stays alive for disconnected tracking
             std::string mac_key(mac_str);
@@ -827,10 +820,10 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
                 wifi_metrics_t *wm = it->second;
                 delete wm->lq;
                 wm->lq = nullptr;
-                lq_util_info_print(LQ_LQTY,"Deleted linkq_t for %s, caff retained\n", mac_str);
+                lq_util_info_print(LQ_LQTY,"Deleted linkq_t for %s, caff retained\n", mac_str.c_str());
             }
         } else {
-            lq_util_info_print(LQ_LQTY,"Device %s not found, nothing to delete\n", mac_str);
+            lq_util_info_print(LQ_LQTY,"Device %s not found, nothing to delete\n", mac_str.c_str());
         }
         pthread_mutex_unlock(&m_json_lock);
         return 0;
@@ -843,8 +836,7 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
 
     if (it == m_wifi_metrics_map.end()) {
         wm = new wifi_metrics_t();
-        strncpy(wm->m_mac, mac_str, sizeof(wm->m_mac) - 1);
-        wm->m_mac[sizeof(wm->m_mac) - 1] = '\0';
+        wm->m_mac = mac_str;
         wm->m_vap_index = stats->vap_index;
         m_wifi_metrics_map[mac_key] = wm;
     } else {
@@ -852,25 +844,25 @@ int qmgr_t::init(stats_arg_t *stats, bool create_flag)
     }
 
     if (!device_exists) {
-        lq_util_info_print(LQ_LQTY,"Creating device %s vap_index=%d\n", mac_str, stats->vap_index);
+        lq_util_info_print(LQ_LQTY,"Creating device %s vap_index=%d\n", mac_str.c_str(), stats->vap_index);
 
         // Create linkq_t if not already present
         if (!wm->lq) {
             wm->lq = new linkq_t();
         }
         wm->lq->init(m_args.threshold, m_args.reporting, stats);
-        lq_util_info_print(LQ_LQTY,"Added linkq_t for %s to m_wifi_metrics_map\n", mac_str);
+        lq_util_info_print(LQ_LQTY,"Added linkq_t for %s to m_wifi_metrics_map\n", mac_str.c_str());
 
         // Create device JSON template and add to Devices array
         cJSON *dev_template = create_dev_template(mac_str, stats->vap_index);
         cJSON_AddItemToArray(dev_arr, dev_template);
         lq_util_info_print(LQ_LQTY,"Added device %s to Devices JSON array (total devices now: %d)\n", 
-            mac_str, cJSON_GetArraySize(dev_arr));
+            mac_str.c_str(), cJSON_GetArraySize(dev_arr));
     } else {
         // Device exists, update stats
         if (wm->lq) {
             wm->lq->init(m_args.threshold, m_args.reporting, stats);
-            lq_util_dbg_print(LQ_LQTY,"Updated stats for existing device %s\n", mac_str);
+            lq_util_dbg_print(LQ_LQTY,"Updated stats for existing device %s\n", mac_str.c_str());
         }
     }
 
@@ -884,18 +876,15 @@ int qmgr_t::rapid_disconnect(stats_arg_t *stats)
         lq_util_error_print(LQ_LQTY, "%s:%d invalid stats or empty MAC\n", __func__, __LINE__);
         return -1;
     }
-    mac_addr_str_t mac_str;
-
-    strncpy(mac_str, stats->mac_str, sizeof(mac_str) - 1);
-    mac_str[sizeof(mac_str) - 1] = '\0';
-    lq_util_info_print(LQ_LQTY,"%s:%d mac_str=%s\n",__func__,__LINE__,mac_str);
+    std::string mac_str(stats->mac_str);
+    lq_util_info_print(LQ_LQTY,"%s:%d mac_str=%s\n",__func__,__LINE__,mac_str.c_str());
 
     pthread_mutex_lock(&m_json_lock);
     std::string mac_key(mac_str);
     auto it = m_wifi_metrics_map.find(mac_key);
     if (it != m_wifi_metrics_map.end() && it->second && it->second->lq) {
         it->second->lq->rapid_disconnect(stats);
-        lq_util_dbg_print(LQ_LQTY,"%s:%d rapid_disconnect called for mac_str=%s\n",__func__,__LINE__,mac_str);
+        lq_util_dbg_print(LQ_LQTY,"%s:%d rapid_disconnect called for mac_str=%s\n",__func__,__LINE__,mac_str.c_str());
     }
     pthread_mutex_unlock(&m_json_lock);
     return 0;
@@ -908,9 +897,7 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
         lq_util_error_print(LQ_LQTY, "%s:%d invalid stats or empty MAC\n", __func__, __LINE__);
         return -1;
     }
-    mac_addr_str_t mac_str;
-    strncpy(mac_str, stats->mac_str, sizeof(mac_str) - 1);
-    mac_str[sizeof(mac_str) - 1] = '\0';
+    std::string mac_str(stats->mac_str);
 #if 0
     lq_util_info_print(LQ_LQTY,"%s:%d mac_str=%s connected_time=%ld.%09ld disconnected_time=%ld.%09ld cli_SNR=%d\n",
         __func__, __LINE__, mac_str,
@@ -928,10 +915,9 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
     if (it == m_wifi_metrics_map.end()) {
         // Create new wifi_metrics for this MAC
         lq_util_info_print(LQ_LQTY, "CAFF qmgr_t %s:%d Creating new wifi_metrics_t for MAC %s\n",
-            __func__, __LINE__, mac_str);
+            __func__, __LINE__, mac_str.c_str());
         wm = new wifi_metrics_t();
-        strncpy(wm->m_mac, mac_str, sizeof(wm->m_mac) - 1);
-        wm->m_mac[sizeof(wm->m_mac) - 1] = '\0';
+        wm->m_mac = mac_str;
         wm->m_vap_index = stats->vap_index;
         m_wifi_metrics_map[mac_key] = wm;
     } else {
@@ -941,10 +927,10 @@ int qmgr_t::caffinity_periodic_stats_update(stats_arg_t *stats)
     // Create caffinity_t if not already present
     if (!wm->caff) {
         lq_util_info_print(LQ_LQTY, "CAFF qmgr_t %s:%d Creating new caffinity_t for MAC %s\n",
-            __func__, __LINE__, mac_str);
+            __func__, __LINE__, mac_str.c_str());
         wm->caff = new caffinity_t();
         lq_util_dbg_print(LQ_LQTY, "CAFF qmgr_t %s:%d Successfully created caffinity_t for MAC %s\n",
-            __func__, __LINE__, mac_str);
+            __func__, __LINE__, mac_str.c_str());
     }
 
     wm->caff->periodic_stats_update(stats);
@@ -1132,12 +1118,12 @@ qmgr_t::~qmgr_t()
   delete m_ipc;
 }
 
-cJSON* qmgr_t::create_affinity_template(mac_addr_str_t mac_str,
+cJSON* qmgr_t::create_affinity_template(const std::string &mac_str,
                                 unsigned int vap_index)
 {
     char tmp[MAX_LINE_SIZE];
     cJSON* obj = cJSON_CreateObject();
-    cJSON_AddItemToObject(obj, "MAC", cJSON_CreateString(mac_str));
+    cJSON_AddItemToObject(obj, "MAC", cJSON_CreateString(mac_str.c_str()));
     cJSON_AddItemToObject(obj, "vapIndex", cJSON_CreateNumber(vap_index));
     
     snprintf(tmp, sizeof(tmp), "Score");

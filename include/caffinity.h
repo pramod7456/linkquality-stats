@@ -26,9 +26,15 @@
 #include "run_qmgr.h"
 #include <algorithm>
 #include <string>
+#include <unordered_map>
 #include "linkquality_util.h"
 
-using ap_mac_str_t = std::string;
+// Per-BSSID timer data
+typedef struct {
+    struct timespec connected_time;
+    struct timespec disconnected_time;
+    struct timespec sleep_time;
+} bssid_timers_t;
 
 // Result structure returned by run_algorithm_caffinity
 typedef struct {
@@ -50,7 +56,8 @@ typedef enum {
 class caffinity_t
 {
     pthread_mutex_t m_lock;
-    std::vector<ap_mac_str_t> m_ap_mac;
+    std::unordered_map<std::string, bssid_timers_t> m_bssid_map;
+    std::string m_current_bssid;
     unsigned int m_auth_failures;
     unsigned int m_auth_attempts;
     unsigned int m_assoc_failures;
@@ -66,10 +73,8 @@ class caffinity_t
     int m_channel_utilization;
     bool m_connected;
     bool m_power_save;
-    struct timespec  m_disconnected_time;
-    struct timespec  m_connected_time;
-    struct timespec  m_sleep_time;
     struct timespec  m_total_time;
+    bssid_timers_t aggregate_bssid_timers() const;
 public:
     caffinity_t();
     ~caffinity_t();
@@ -78,11 +83,21 @@ public:
     int score();
     caffinity_result_t run_algorithm_caffinity(const char *mac);
     bool get_connected() const { return m_connected; }
-    struct timespec get_disconnected_time() const { 
-        return m_disconnected_time; 
+    struct timespec get_disconnected_time() const {
+        if (!m_current_bssid.empty()) {
+            auto it = m_bssid_map.find(m_current_bssid);
+            if (it != m_bssid_map.end()) return it->second.disconnected_time;
+        }
+        struct timespec ts = {0, 0};
+        return ts;
     }
-    struct timespec get_connected_time() const { 
-        return m_connected_time; 
+    struct timespec get_connected_time() const {
+        if (!m_current_bssid.empty()) {
+            auto it = m_bssid_map.find(m_current_bssid);
+            if (it != m_bssid_map.end()) return it->second.connected_time;
+        }
+        struct timespec ts = {0, 0};
+        return ts;
     }
 
    

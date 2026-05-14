@@ -31,7 +31,7 @@
 
 linkq_params_t linkq_t::m_linkq_params[MAX_LINKQ_PARAMS] = {{"DOWNLINK_SNR", true}, {"DOWNLINK_PER", false}, {"DOWNLINK_PHY", true},{"UPLINK_SNR", true}, {"UPLINK_PER", false}, {"UPLINK_PHY", true}};
 
-mac_addr_str_t linkq_t::ignite_station_mac = "";
+std::string linkq_t::ignite_station_mac = "";
 
 radio_max_snr_t linkq_t::max_snr_radio_val = {25,25,25};
 linkq_params_t linkq_t::m_score_params[] = {
@@ -94,10 +94,10 @@ lq_score_map_t linkq_t::run_algorithm(const char *mac, linkq_data_t data,
     double x, y;
     bool is_ignite_station = false;
     memset(&m_data_sample,0,sizeof(sample_t));
-    if(strncmp(ignite_station_mac, mac, sizeof(ignite_station_mac)) == 0)
+    if(ignite_station_mac == mac)
     {
         lq_util_dbg_print(LQ_LQTY,"%s:%d mac=%s and ignite_station_mac=%s\n",
-	__func__,__LINE__,mac,ignite_station_mac);
+	__func__,__LINE__,mac,ignite_station_mac.c_str());
         is_ignite_station = true;
        
     }
@@ -634,7 +634,7 @@ void linkq_t::register_station_mac(const char* str)
 {
     lq_util_error_print(LQ_LQTY,"%s:%d str=%s\n",__func__,__LINE__,str);
     if (str) {
-        snprintf(ignite_station_mac, sizeof(ignite_station_mac), "%s", str);
+        ignite_station_mac = str;
     }
     return;
 }
@@ -643,9 +643,9 @@ void linkq_t::unregister_station_mac(const char* str)
     lq_util_error_print(LQ_LQTY,"%s:%d str=%s\n",__func__,__LINE__,str);
     if (!str)
         return;
-    if(strncmp(ignite_station_mac, str, sizeof(ignite_station_mac)) == 0) 
+    if(ignite_station_mac == str)
     {
-        ignite_station_mac[0] = '\0';
+        ignite_station_mac.clear();
     }
     return;
 }

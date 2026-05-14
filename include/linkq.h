@@ -46,7 +46,7 @@ typedef float linkq_data_t[MAX_LINKQ_PARAMS];
 typedef std::unordered_map<std::string, double> lq_score_map_t;
 
 class linkq_t {
-    static mac_addr_str_t ignite_station_mac;
+    static std::string ignite_station_mac;
     sequence_t m_seq[MAX_LINKQ_PARAMS];
     pthread_mutex_t m_vec_lock; 
     pthread_mutex_t m_deque_lock; 
